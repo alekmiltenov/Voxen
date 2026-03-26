@@ -1,16 +1,19 @@
+import { useNavigate } from "react-router-dom";
+
 export default function Home() {
+  const navigate = useNavigate();
+
   return (
     <div style={styles.container}>
       <h1>Voxen</h1>
+        
+      <button style={styles.big} onClick={() => navigate("/communicate")}>
+        Communicate
+      </button>
 
-      <div style={styles.grid}>
-        <button style={styles.button}>Basic Needs</button>
-        <button style={styles.button}>Health</button>
-        <button style={styles.button}>Emotions</button>
-        <button style={styles.button}>Pain</button>
-      </div>
-
-      <button style={styles.emergency}>EMERGENCY</button>
+      <button style={styles.big} onClick={() => navigate("/actions")}>
+        Actions
+      </button>
     </div>
   );
 }
@@ -20,25 +23,12 @@ const styles = {
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
-    gap: "20px",
-    padding: "20px",
+    gap: "40px",
+    marginTop: "100px",
   },
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: "20px",
-  },
-  button: {
-    fontSize: "24px",
-    padding: "30px",
-    borderRadius: "12px",
-  },
-  emergency: {
-    marginTop: "30px",
-    background: "red",
-    color: "white",
-    fontSize: "28px",
-    padding: "20px 40px",
+  big: {
+    fontSize: "32px",
+    padding: "40px 80px",
     borderRadius: "20px",
   },
 };
