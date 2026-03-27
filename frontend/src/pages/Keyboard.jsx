@@ -11,7 +11,9 @@ const ROWS = [
 export default function Keyboard() {
   const navigate      = useNavigate();
   const location      = useLocation();
-  const incomingWords = location.state?.words ?? [];
+  const incomingWords = location.state?.words    ?? [];
+  const returnTo      = location.state?.returnTo ?? "/communicate";
+  const extraState    = location.state?.history !== undefined ? { history: location.state.history } : {};
   const [text, setText] = useState(incomingWords.join(" "));
 
   function pressKey(key) {
@@ -25,14 +27,14 @@ export default function Keyboard() {
     if (newWords.length > 0) {
       apiPost("/vocab/sentence", { words: allWords }).catch(console.error);
     }
-    navigate("/communicate", { state: { words: allWords } });
+    navigate(returnTo, { state: { words: allWords, ...extraState } });
   }
 
   return (
     <div style={s.page}>
       <div style={s.topBar}>
         <button style={s.pill}
-          onClick={() => navigate("/communicate", { state: { words: incomingWords } })}>
+          onClick={() => navigate(returnTo, { state: { words: incomingWords, ...extraState } })}>
           ← Back
         </button>
         <span style={s.label}>Keyboard</span>

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiPost } from "../api";
+import DwellButton from "../components/DwellButton";
 
 const ACTIONS = [
   { id: 2, label: "Emergency",  sub: "Send alert to caregiver", icon: "🚨" },
@@ -27,7 +28,7 @@ export default function Actions() {
   return (
     <div style={s.page}>
       <div style={s.header}>
-        <button style={s.backBtn} onClick={() => navigate("/")}>← Back</button>
+        <DwellButton style={s.backBtn} onClick={() => navigate("/")}>← Back</DwellButton>
         <span style={s.title}>Actions</span>
         <div style={{ width: 80 }} />
       </div>
@@ -41,14 +42,13 @@ export default function Actions() {
 
       <div style={s.grid}>
         {ACTIONS.map(a => (
-          <button key={a.id} style={s.card}
-            onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
-            onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-            onClick={() => runAction(a.id)}>
+          <DwellButton key={a.id} style={s.card}
+            hoverBg="rgba(255,255,255,0.05)"
+            onClick={() => a.id === 3 ? navigate("/ai-chat") : runAction(a.id)}>
             <span style={s.icon}>{a.icon}</span>
             <span style={s.label}>{a.label}</span>
             <span style={s.sub}>{a.sub}</span>
-          </button>
+          </DwellButton>
         ))}
       </div>
     </div>

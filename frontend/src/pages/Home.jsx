@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom";
+import DwellButton from "../components/DwellButton";
 
 export default function Home() {
   const navigate = useNavigate();
@@ -7,9 +8,8 @@ export default function Home() {
     <div style={s.page}>
       <p style={s.title}>Voxen</p>
       <div style={s.grid}>
-        <button style={s.card}
-          onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
-          onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+        <DwellButton style={s.card}
+          hoverBg="rgba(255,255,255,0.05)"
           onClick={() => navigate("/communicate")}>
           <span style={s.cardIcon}>
             <svg width="40" height="40" viewBox="0 0 24 24" fill="none"
@@ -19,11 +19,10 @@ export default function Home() {
           </span>
           <span style={s.cardTitle}>Communicate</span>
           <span style={s.cardSub}>Build sentences with suggestions</span>
-        </button>
+        </DwellButton>
 
-        <button style={s.card}
-          onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
-          onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+        <DwellButton style={s.card}
+          hoverBg="rgba(255,255,255,0.05)"
           onClick={() => navigate("/actions")}>
           <span style={s.cardIcon}>
             <svg width="40" height="40" viewBox="0 0 24 24" fill="none"
@@ -33,8 +32,16 @@ export default function Home() {
           </span>
           <span style={s.cardTitle}>Actions</span>
           <span style={s.cardSub}>One-tap for common needs</span>
-        </button>
+        </DwellButton>
       </div>
+
+      <DwellButton
+        style={s.calibrateBtn}
+        hoverBg="rgba(255,255,255,0.06)"
+        onClick={() => navigate("/eye")}
+      >
+        👁 Eye Tracking
+      </DwellButton>
     </div>
   );
 }
@@ -92,5 +99,16 @@ const s = {
   cardSub: {
     fontSize: "14px",
     color:    "rgba(255,255,255,0.3)",
+  },
+  calibrateBtn: {
+    padding:      "12px 28px",
+    borderRadius: "14px",
+    background:   "transparent",
+    border:       "1px solid rgba(255,255,255,0.1)",
+    color:        "rgba(255,255,255,0.35)",
+    fontSize:     "14px",
+    fontWeight:   "300",
+    cursor:       "pointer",
+    letterSpacing: "0.04em",
   },
 };

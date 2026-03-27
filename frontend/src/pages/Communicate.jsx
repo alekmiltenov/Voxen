@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { apiGet, apiPost, createSuggestSocket } from "../api";
+import DwellButton from "../components/DwellButton";
 
 // ── Starter phrases shown on first screen ─────────────────────────────────
 const DEFAULT_STARTERS = [
@@ -26,6 +27,7 @@ export default function Communicate() {
   const [suggestions, setSuggestions] = useState([]);
   const [selIdx,      setSelIdx]      = useState(0);
   const [speaking,    setSpeaking]    = useState(false);
+  const [showMenu,    setShowMenu]    = useState(false);
   const wsRef = useRef(null);
 
   const mode = words.length === 0 ? "starters" : "drum";
@@ -116,26 +118,25 @@ export default function Communicate() {
     return (
       <div style={s.page}>
         <div style={s.starterTop}>
-          <button style={s.pill} onClick={() => navigate("/")}>← Back</button>
-          <button style={s.pill}
+          <DwellButton style={s.pill} onClick={() => navigate("/")}>← Back</DwellButton>
+          <DwellButton style={s.pill}
             onClick={() => navigate("/keyboard", { state: { words } })}>
             keyboard
-          </button>
+          </DwellButton>
         </div>
 
         <div style={s.starterBody}>
           <p style={s.starterHint}>Start with…</p>
           <div style={s.starterGrid}>
             {starters.map(phrase => (
-              <button
+              <DwellButton
                 key={phrase}
                 style={s.starterBtn}
-                onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.08)"}
-                onMouseLeave={e => e.currentTarget.style.background = "rgba(255,255,255,0.03)"}
+                hoverBg="rgba(255,255,255,0.08)"
                 onClick={() => selectStarter(phrase)}
               >
                 {phrase}
-              </button>
+              </DwellButton>
             ))}
           </div>
         </div>
@@ -147,40 +148,44 @@ export default function Communicate() {
   return (
     <div style={s.page}>
 
-      <button style={s.sideBtn} onClick={backspace}
-        onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.1)"}
-        onMouseLeave={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}>
-        Back
-      </button>
+      {/* ── action menu overlay ── */}
+      {showMenu && (
+        <div style={s.overlay} onClick={() => setShowMenu(false)}>
+          {/* Speak — right center */}
+          <DwellButton style={{ ...s.menuBtn, top: "50%", right: "8%", transform: "translateY(-50%)" }}
+            onClick={e => { e.stopPropagation(); speak(); setShowMenu(false); }}>
+            {speaking ? "speaking…" : "Speak"}
+          </DwellButton>
+          {/* Clear — top center */}
+          <DwellButton style={{ ...s.menuBtn, top: "10%", left: "50%", transform: "translateX(-50%)" }}
+            onClick={e => { e.stopPropagation(); clear(); setShowMenu(false); }}>
+            Clear
+          </DwellButton>
+          {/* Back ⌫ — bottom center */}
+          <DwellButton style={{ ...s.menuBtn, bottom: "10%", left: "50%", transform: "translateX(-50%)" }}
+            onClick={e => { e.stopPropagation(); backspace(); setShowMenu(false); }}>
+            ⌫ Back
+          </DwellButton>
+        </div>
+      )}
+
+      <DwellButton style={s.sideBtn} onClick={() => setShowMenu(true)}
+        hoverBg="rgba(255,255,255,0.1)">
+        ···
+      </DwellButton>
 
       <div style={s.main}>
 
         {/* sentence */}
         <div style={s.sentencePanel}>
           <p style={s.sentenceText}>{words.join(" ")}</p>
-          <div style={s.controls}>
-            <button style={s.ctrlBtn} onClick={backspace}>⌫</button>
-            <button style={s.ctrlBtn} onClick={clear}>clear</button>
-            <button
-              style={{ ...s.ctrlBtn, ...(speaking ? s.ctrlActive : {}) }}
-              onClick={speak}
-              disabled={speaking}>
-              {speaking ? "speaking…" : "speak"}
-            </button>
-            <button style={s.ctrlBtn}
-              onClick={() => navigate("/keyboard", { state: { words } })}>
-              keyboard
-            </button>
-          </div>
         </div>
 
         {/* drum */}
         <div style={s.drumPanel}>
-          <button style={s.arrowBtn} onClick={scrollUp}
-            onMouseEnter={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.45)"}
-            onMouseLeave={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)"}>
+          <DwellButton style={s.arrowBtn} onClick={scrollUp}>
             ↑
-          </button>
+          </DwellButton>
 
           <div style={s.drumWords}>
             {[-2, -1, 0, 1, 2].map(slot => {
@@ -199,19 +204,16 @@ export default function Communicate() {
             })}
           </div>
 
-          <button style={s.arrowBtn} onClick={scrollDown}
-            onMouseEnter={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.45)"}
-            onMouseLeave={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)"}>
+          <DwellButton style={s.arrowBtn} onClick={scrollDown}>
             ↓
-          </button>
+          </DwellButton>
         </div>
       </div>
 
-      <button style={s.sideBtn} onClick={confirmWord}
-        onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.1)"}
-        onMouseLeave={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}>
+      <DwellButton style={s.sideBtn} onClick={confirmWord}
+        hoverBg="rgba(255,255,255,0.1)">
         OK
-      </button>
+      </DwellButton>
     </div>
   );
 }
@@ -302,51 +304,53 @@ const s = {
     height:     "100%",
   },
   sentencePanel: {
-    flex:           "0 0 50%",
+    flex:           "0 0 28%",
     display:        "flex",
     flexDirection:  "column",
     justifyContent: "center",
     paddingLeft:    "16px",
-    paddingRight:   "32px",
+    paddingRight:   "24px",
     height:         "100%",
   },
   sentenceText: {
-    fontSize:      "50px",
+    fontSize:      "58px",
     fontWeight:    "300",
     color:         "#ffffff",
     margin:        0,
     letterSpacing: "-0.5px",
-    lineHeight:    "1.25",
+    lineHeight:    "1.2",
     wordBreak:     "break-word",
-  },
-  controls: {
-    display:    "flex",
-    gap:        "10px",
-    marginTop:  "24px",
-    flexWrap:   "wrap",
-  },
-  ctrlBtn: {
-    padding:      "7px 18px",
-    borderRadius: "18px",
-    background:   "transparent",
-    border:       "1px solid rgba(255,255,255,0.12)",
-    color:        "rgba(255,255,255,0.38)",
-    fontSize:     "13px",
-    cursor:       "pointer",
   },
   ctrlActive: {
     borderColor: "rgba(255,255,255,0.35)",
     color:       "rgba(255,255,255,0.7)",
+  },
+  overlay: {
+    position:   "fixed",
+    inset:      0,
+    background: "rgba(0,0,0,0.82)",
+    zIndex:     100,
+  },
+  menuBtn: {
+    position:     "absolute",
+    padding:      "28px 48px",
+    borderRadius: "20px",
+    background:   "rgba(255,255,255,0.06)",
+    border:       "1.5px solid rgba(255,255,255,0.18)",
+    color:        "#ffffff",
+    fontSize:     "32px",
+    fontWeight:   "300",
+    cursor:       "pointer",
+    letterSpacing:"-0.3px",
+    transition:   "background 0.15s",
   },
   drumPanel: {
     flex:           "1",
     display:        "flex",
     flexDirection:  "column",
     alignItems:     "center",
-    justifyContent: "space-between",
-    height:         "100%",
-    paddingTop:     "40px",
-    paddingBottom:  "40px",
+    justifyContent: "center",
+    gap:            "32px",
   },
   arrowBtn: {
     width:          "50px",

@@ -3,6 +3,8 @@ import Home        from "./pages/Home";
 import Communicate from "./pages/Communicate";
 import Actions     from "./pages/Actions";
 import Keyboard    from "./pages/Keyboard";
+import AIChat      from "./pages/AIChat";
+import EyeTracking from "./pages/EyeTracking";
 
 function App() {
   return (
@@ -12,6 +14,8 @@ function App() {
         <Route path="/communicate" element={<Communicate />} />
         <Route path="/actions"     element={<Actions />} />
         <Route path="/keyboard"    element={<Keyboard />} />
+        <Route path="/ai-chat"     element={<AIChat />} />
+        <Route path="/eye"         element={<EyeTracking />} />
       </Routes>
     </BrowserRouter>
   );

@@ -12,6 +12,7 @@ model.eval()
 _WORD_RE = re.compile(r"^[a-zA-Z][a-zA-Z']*$")
 
 
+
 def _clean(raw: str) -> str | None:
     """Decode, strip whitespace/Ġ artifacts, validate. Returns word or None."""
     word = raw.strip()

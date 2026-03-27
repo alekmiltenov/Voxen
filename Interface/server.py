@@ -10,14 +10,28 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pymongo import MongoClient, DESCENDING
+from dotenv import load_dotenv
 
 # ── Path setup ────────────────────────────────────────────────────────────────
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+load_dotenv(os.path.join(_ROOT, ".env"))
 sys.path.insert(0, _ROOT)
 sys.path.insert(0, os.path.join(_ROOT, "Suggestion-System"))
 sys.path.insert(0, os.path.join(_ROOT, "Action_Space", "actions"))
+sys.path.insert(0, os.path.join(_ROOT, "Action_Space"))
 
 from Suggestion_System import get_next_word_candidates
+import re
+_WORD_RE = re.compile(r"^[a-zA-Z][a-zA-Z']{1,}$")  # at least 2 chars, real word shape
+
+_get_ai_reply = None
+try:
+    from ai_chat_service import get_ai_reply as _get_ai_reply
+    print("[info] AI chat ready")
+except Exception as _e:
+    import traceback
+    print(f"[warn] AI chat unavailable: {_e}")
+    traceback.print_exc()
 
 # ── Action imports (each independent) ────────────────────────────────────────
 _actions: dict = {}
@@ -35,8 +49,8 @@ except Exception as _e:
     print(f"[warn] 'emergency' unavailable: {_e}")
 
 try:
-    from aichat import ai_chat
-    _actions["ai_chat"] = ai_chat
+    from aichat import chat_with_ai
+    _actions["ai_chat"] = chat_with_ai
 except Exception as _e:
     print(f"[warn] 'ai_chat' unavailable: {_e}")
 
@@ -113,7 +127,7 @@ def _merge(model_candidates: list, context_words: list[str], top_k: int) -> list
 
     # Inject ngram words that didn't make the model's shortlist
     for word, ng_score in ng.items():
-        if word not in merged:
+        if word not in merged and _WORD_RE.match(word):
             merged[word] = (word, ng_score)
 
     return sorted(merged.values(), key=lambda x: x[1], reverse=True)[:top_k]
@@ -210,6 +224,22 @@ def execute_action(body: ActionRequest):
         return fn(body.payload) if body.payload else fn()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# ── AI Chat ───────────────────────────────────────────────────────────────────
+class ChatRequest(BaseModel):
+    message: str
+
+@app.post("/ai/chat")
+def ai_chat_endpoint(body: ChatRequest):
+    if not _get_ai_reply:
+        raise HTTPException(status_code=503, detail="AI chat unavailable")
+    if not body.message.strip():
+        raise HTTPException(status_code=400, detail="Empty message")
+    try:
+        reply = _get_ai_reply(body.message.strip())
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return {"reply": reply}
 
 # ── WebSocket: suggestions ────────────────────────────────────────────────────
 @app.websocket("/ws/suggest")
