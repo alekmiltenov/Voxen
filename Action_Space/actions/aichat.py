@@ -1,3 +1,10 @@
-def ai_chat():
-    print("Opening AI chat...")
-    return {"status": "ok", "message": "AI chat opened"}
+def chat_with_ai(payload=None):
+    return {
+        "status": "executed",
+        "action": "chat_with_ai",
+        "success": True,
+        "message": "AI chat opened",
+        "data": {
+            "mode": "chat"
+        }
+    }
