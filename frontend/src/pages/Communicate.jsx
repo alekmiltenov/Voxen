@@ -1,9 +1,12 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { apiGet, apiPost, createSuggestSocket } from "../api";
+<<<<<<< Updated upstream
 import DwellButton from "../components/DwellButton";
+=======
+import { useHeadControl } from "./HeadControlContext";
+>>>>>>> Stashed changes
 
-// ── Starter phrases shown on first screen ─────────────────────────────────
 const DEFAULT_STARTERS = [
   "I", "I need", "I want", "I feel",
   "Help", "Can you", "Yes", "No",
@@ -21,6 +24,7 @@ const SLOT_STYLE = {
 export default function Communicate() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { enabled, register, unregister } = useHeadControl();
 
   const [words,       setWords]       = useState(location.state?.words ?? []);
   const [starters,    setStarters]    = useState(DEFAULT_STARTERS);
@@ -30,9 +34,25 @@ export default function Communicate() {
   const [showMenu,    setShowMenu]    = useState(false);
   const wsRef = useRef(null);
 
+  // ── refs so head-control handler never captures stale values ─────────────
+  const selRef         = useRef(0);
+  const wordsRef       = useRef([]);
+  const suggestionsRef = useRef([]);
+  const startersRef    = useRef(DEFAULT_STARTERS);
+  const modeRef        = useRef("starters"); // "starters" | "drum"
+
+  const setSel = (v) => { selRef.current = v; setSelIdx(v); };
+
+  useEffect(() => { wordsRef.current       = words;       }, [words]);
+  useEffect(() => { suggestionsRef.current = suggestions; }, [suggestions]);
+  useEffect(() => { startersRef.current    = starters;    }, [starters]);
+  useEffect(() => {
+    modeRef.current = words.length === 0 ? "starters" : "drum";
+  }, [words]);
+
   const mode = words.length === 0 ? "starters" : "drum";
 
-  // ── personalized starters from backend ───────────────────────────────────
+  // ── personalized starters ─────────────────────────────────────────────────
   useEffect(() => {
     apiGet("/vocab/starters?limit=12")
       .then(d => {
@@ -42,21 +62,21 @@ export default function Communicate() {
       .catch(() => {});
   }, []);
 
-  // ── WebSocket ─────────────────────────────────────────────────────────────
+  // ── suggestion WebSocket ──────────────────────────────────────────────────
   useEffect(() => {
     const ws = createSuggestSocket();
     wsRef.current = ws;
     ws.onmessage = e => {
       const d = JSON.parse(e.data);
       if (d.suggestions) {
-        setSuggestions(d.suggestions.map(s => s.word ?? s));
-        setSelIdx(0);
+        const list = d.suggestions.map(s => s.word ?? s);
+        setSuggestions(list);
+        setSel(0);
       }
     };
     return () => ws.close();
   }, []);
 
-  // ── send to WS when words change ──────────────────────────────────────────
   useEffect(() => {
     if (words.length === 0) return;
     const ws = wsRef.current;
@@ -65,14 +85,21 @@ export default function Communicate() {
     }
   }, [words]);
 
+<<<<<<< Updated upstream
   const visibleSuggestions = words.length === 0 ? [] : suggestions;
 
   // ── starter click → enter drum mode ──────────────────────────────────────
+=======
+  // ── word helpers ──────────────────────────────────────────────────────────
+  const wrap = (i, n) => n === 0 ? 0 : ((i % n) + n) % n;
+
+>>>>>>> Stashed changes
   function selectStarter(phrase) {
     setWords(phrase.trim().split(/\s+/));
-    setSelIdx(0);
+    setSel(0);
   }
 
+<<<<<<< Updated upstream
   // ── drum: circular slot → word map ────────────────────────────────────────
   const n = visibleSuggestions.length;
   const wrap = i => n === 0 ? -1 : ((i % n) + n) % n;
@@ -87,14 +114,19 @@ export default function Communicate() {
   function scrollUp()   { setSelIdx(i => wrap(i - 1)); }
   function scrollDown() { setSelIdx(i => wrap(i + 1)); }
 
+=======
+>>>>>>> Stashed changes
   function confirmWord() {
-    if (!centeredWord) return;
-    setWords(prev => [...prev, centeredWord.trim()]);
-    setSelIdx(0);
+    const sug = suggestionsRef.current;
+    if (!sug.length) return;
+    const word = sug[selRef.current]?.trim();
+    if (!word) return;
+    setWords(prev => [...prev, word]);
+    setSel(0);
   }
 
   function backspace() {
-    setSelIdx(0);
+    setSel(0);
     setWords(prev => prev.slice(0, -1));
   }
 
@@ -111,9 +143,43 @@ export default function Communicate() {
     window.speechSynthesis.cancel();
     setWords([]);
     setSuggestions([]);
-    setSelIdx(0);
+    setSel(0);
     setSpeaking(false);
   }
+
+  // ── head-control handler ─────────────────────────────────────────────────
+  useEffect(() => {
+    register((cmd) => {
+      const m = modeRef.current;
+
+      if (m === "starters") {
+        const n = startersRef.current.length;
+        if (cmd === "LEFT")    setSel(wrap(selRef.current - 1, n));
+        if (cmd === "RIGHT")   setSel(wrap(selRef.current + 1, n));
+        if (cmd === "FORWARD") selectStarter(startersRef.current[selRef.current]);
+        if (cmd === "BACK")    navigate("/");
+
+      } else {
+        // drum mode
+        const n = suggestionsRef.current.length;
+        if (cmd === "LEFT")    setSel(wrap(selRef.current - 1, n)); // scroll up
+        if (cmd === "RIGHT")   setSel(wrap(selRef.current + 1, n)); // scroll down
+        if (cmd === "FORWARD") confirmWord();
+        if (cmd === "BACK")    backspace();
+      }
+    });
+    return () => unregister();
+  }, []);
+
+  // ── drum helpers ──────────────────────────────────────────────────────────
+  const n = suggestions.length;
+  const slotWords = {};
+  if (n > 0) {
+    [-2, -1, 0, 1, 2].forEach(slot => {
+      slotWords[slot] = suggestions[wrap(selIdx + slot, n)];
+    });
+  }
+  const centeredWord = n > 0 ? suggestions[selIdx] : null;
 
   // ── STARTERS PAGE ─────────────────────────────────────────────────────────
   if (mode === "starters") {
@@ -128,8 +194,11 @@ export default function Communicate() {
         </div>
 
         <div style={s.starterBody}>
-          <p style={s.starterHint}>Start with…</p>
+          <p style={s.starterHint}>
+            {enabled ? "Tilt LEFT / RIGHT to browse · FORWARD to select" : "Start with…"}
+          </p>
           <div style={s.starterGrid}>
+<<<<<<< Updated upstream
             {starters.map(phrase => (
               <DwellButton
                 key={phrase}
@@ -140,6 +209,28 @@ export default function Communicate() {
                 {phrase}
               </DwellButton>
             ))}
+=======
+            {starters.map((phrase, i) => {
+              const isSelected = enabled && selIdx === i;
+              return (
+                <button
+                  key={phrase}
+                  style={{
+                    ...s.starterBtn,
+                    borderColor: isSelected ? "rgba(255,255,255,0.4)"  : "rgba(255,255,255,0.08)",
+                    background:  isSelected ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.03)",
+                    color:       isSelected ? "rgba(255,255,255,1)"    : "rgba(255,255,255,0.85)",
+                    transform:   isSelected ? "scale(1.04)"            : "scale(1)",
+                  }}
+                  onMouseEnter={e => !isSelected && (e.currentTarget.style.background = "rgba(255,255,255,0.08)")}
+                  onMouseLeave={e => !isSelected && (e.currentTarget.style.background = "rgba(255,255,255,0.03)")}
+                  onClick={() => selectStarter(phrase)}
+                >
+                  {phrase}
+                </button>
+              );
+            })}
+>>>>>>> Stashed changes
           </div>
           <button
             style={s.keyboardBtn}
@@ -157,6 +248,7 @@ export default function Communicate() {
   return (
     <div style={s.page}>
 
+<<<<<<< Updated upstream
       {/* ── action menu overlay ── */}
       {showMenu && (
         <div style={s.overlay} onClick={() => setShowMenu(false)}>
@@ -182,17 +274,58 @@ export default function Communicate() {
         hoverBg="rgba(255,255,255,0.1)">
         ···
       </DwellButton>
+=======
+      {/* BACK side button */}
+      <button style={s.sideBtn} onClick={backspace}
+        onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.1)"}
+        onMouseLeave={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}>
+        {enabled ? "BACK" : "Back"}
+      </button>
+>>>>>>> Stashed changes
 
       <div style={s.main}>
 
-        {/* sentence */}
+        {/* sentence panel */}
         <div style={s.sentencePanel}>
           <p style={s.sentenceText}>{words.join(" ")}</p>
+<<<<<<< Updated upstream
+=======
+          <div style={s.controls}>
+            <button style={s.ctrlBtn} onClick={backspace}>⌫</button>
+            <button style={s.ctrlBtn} onClick={clear}>clear</button>
+            <button
+              style={{ ...s.ctrlBtn, ...(speaking ? s.ctrlActive : {}) }}
+              onClick={speak}
+              disabled={speaking}>
+              {speaking ? "speaking…" : "speak"}
+            </button>
+            <button style={s.ctrlBtn}
+              onClick={() => navigate("/keyboard", { state: { words } })}>
+              keyboard
+            </button>
+          </div>
+
+          {enabled && (
+            <div style={s.drumLegend}>
+              <span>← &nbsp; scroll up</span>
+              <span>→ &nbsp; scroll down</span>
+              <span>FORWARD &nbsp; add word</span>
+              <span>BACK &nbsp; delete</span>
+            </div>
+          )}
+>>>>>>> Stashed changes
         </div>
 
         {/* drum */}
         <div style={s.drumPanel}>
+<<<<<<< Updated upstream
           <DwellButton style={s.arrowBtn} onClick={scrollUp}>
+=======
+          <button style={s.arrowBtn}
+            onClick={() => setSel(wrap(selIdx - 1, n))}
+            onMouseEnter={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.45)"}
+            onMouseLeave={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)"}>
+>>>>>>> Stashed changes
             ↑
           </DwellButton>
 
@@ -206,6 +339,8 @@ export default function Communicate() {
                   fontSize:   ds.fontSize,
                   opacity:    word ? ds.opacity : 0,
                   fontWeight: ds.fontWeight,
+                  // highlight centred word when head control active
+                  color: slot === 0 && enabled ? "#ffffff" : "rgba(255,255,255,0.9)",
                 }}>
                   {word}
                 </div>
@@ -213,16 +348,32 @@ export default function Communicate() {
             })}
           </div>
 
+<<<<<<< Updated upstream
           <DwellButton style={s.arrowBtn} onClick={scrollDown}>
+=======
+          <button style={s.arrowBtn}
+            onClick={() => setSel(wrap(selIdx + 1, n))}
+            onMouseEnter={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.45)"}
+            onMouseLeave={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)"}>
+>>>>>>> Stashed changes
             ↓
           </DwellButton>
         </div>
       </div>
 
+<<<<<<< Updated upstream
       <DwellButton style={s.sideBtn} onClick={confirmWord}
         hoverBg="rgba(255,255,255,0.1)">
         OK
       </DwellButton>
+=======
+      {/* OK side button */}
+      <button style={s.sideBtn} onClick={confirmWord}
+        onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.1)"}
+        onMouseLeave={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}>
+        {enabled ? "FWD" : "OK"}
+      </button>
+>>>>>>> Stashed changes
     </div>
   );
 }
@@ -237,8 +388,6 @@ const s = {
     alignItems: "center",
     overflow:   "hidden",
   },
-
-  // ── starters ──
   starterTop: {
     position:       "absolute",
     top:            "28px",
@@ -260,7 +409,7 @@ const s = {
     margin:        0,
     fontSize:      "14px",
     color:         "rgba(255,255,255,0.25)",
-    letterSpacing: "0.12em",
+    letterSpacing: "0.08em",
     textTransform: "uppercase",
   },
   starterGrid: {
@@ -272,13 +421,12 @@ const s = {
   starterBtn: {
     padding:      "22px 16px",
     borderRadius: "14px",
-    background:   "rgba(255,255,255,0.03)",
-    border:       "1px solid rgba(255,255,255,0.08)",
+    border:       "1px solid",
     color:        "rgba(255,255,255,0.85)",
     fontSize:     "20px",
     fontWeight:   "300",
     cursor:       "pointer",
-    transition:   "background 0.15s",
+    transition:   "all 0.15s ease",
     letterSpacing:"-0.2px",
   },
   keyboardBtn: {
@@ -291,12 +439,9 @@ const s = {
     fontWeight:   "400",
     cursor:       "pointer",
     transition:   "background 0.15s",
-    letterSpacing:"-0.2px",
     width:        "calc(50% + 7px)",
     margin:       "24px auto 0",
   },
-
-  // ── drum page ──
   pill: {
     padding:      "8px 18px",
     borderRadius: "20px",
@@ -344,10 +489,29 @@ const s = {
     lineHeight:    "1.2",
     wordBreak:     "break-word",
   },
+<<<<<<< Updated upstream
+=======
+  controls: {
+    display:   "flex",
+    gap:       "10px",
+    marginTop: "24px",
+    flexWrap:  "wrap",
+  },
+  ctrlBtn: {
+    padding:      "7px 18px",
+    borderRadius: "18px",
+    background:   "transparent",
+    border:       "1px solid rgba(255,255,255,0.12)",
+    color:        "rgba(255,255,255,0.38)",
+    fontSize:     "13px",
+    cursor:       "pointer",
+  },
+>>>>>>> Stashed changes
   ctrlActive: {
     borderColor: "rgba(255,255,255,0.35)",
     color:       "rgba(255,255,255,0.7)",
   },
+<<<<<<< Updated upstream
   overlay: {
     position:   "fixed",
     inset:      0,
@@ -366,6 +530,13 @@ const s = {
     cursor:       "pointer",
     letterSpacing:"-0.3px",
     transition:   "background 0.15s",
+=======
+  drumLegend: {
+    display:       "flex",
+    flexDirection: "column",
+    gap:           4,
+    marginTop:     28,
+>>>>>>> Stashed changes
   },
   drumPanel: {
     flex:           "1",
@@ -407,4 +578,12 @@ const s = {
     whiteSpace:    "nowrap",
     minHeight:     "1em",
   },
+};
+
+// small legend items in drum mode
+const drumLegendItem = {
+  fontSize:      12,
+  color:         "rgba(255,255,255,0.2)",
+  letterSpacing: "0.06em",
+  textTransform: "uppercase",
 };

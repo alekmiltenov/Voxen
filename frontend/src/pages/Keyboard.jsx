@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { apiPost } from "../api";
+import { useHeadControl } from "./HeadControlContext";
 
 const ROWS = [
   ["Q","W","E","R","T","Y","U","I","O","P"],
@@ -11,10 +12,20 @@ const ROWS = [
 export default function Keyboard() {
   const navigate      = useNavigate();
   const location      = useLocation();
-  const incomingWords = location.state?.words    ?? [];
-  const returnTo      = location.state?.returnTo ?? "/communicate";
-  const extraState    = location.state?.history !== undefined ? { history: location.state.history } : {};
+  const { enabled, register, unregister } = useHeadControl();
+
+  const incomingWords = location.state?.words ?? [];
   const [text, setText] = useState(incomingWords.join(" "));
+
+  // ── head control: only BACK is meaningful on the keyboard ────────────────
+  // The keyboard is a manual fallback — tilting left/right to type letters
+  // would be too slow. BACK navigates back to the communicate screen.
+  useEffect(() => {
+    register((cmd) => {
+      if (cmd === "BACK") navigate("/communicate", { state: { words: incomingWords } });
+    });
+    return () => unregister();
+  }, []);
 
   function pressKey(key) {
     if (key === "⌫") setText(t => t.slice(0, -1));
@@ -40,6 +51,12 @@ export default function Keyboard() {
         <span style={s.label}>Keyboard</span>
         <div style={{ width: 80 }} />
       </div>
+
+      {enabled && (
+        <div style={s.headHint}>
+          Head control is active &mdash; tilt <strong>BACK</strong> to return to Communicate
+        </div>
+      )}
 
       <div style={s.display}>
         <span style={text ? s.displayText : s.placeholder}>
@@ -114,6 +131,13 @@ const s = {
     letterSpacing: "0.1em",
     textTransform: "uppercase",
   },
+  headHint: {
+    textAlign:     "center",
+    fontSize:      13,
+    color:         "rgba(255,255,255,0.25)",
+    letterSpacing: "0.04em",
+    padding:       "6px 0",
+  },
   display: {
     minHeight:    "64px",
     padding:      "14px 20px",
@@ -142,16 +166,16 @@ const s = {
     gap:     "5px",
   },
   key: {
-    flex:          1,
-    padding:       "0",
-    height:        "52px",
-    borderRadius:  "10px",
-    background:    "transparent",
-    border:        "1px solid rgba(255,255,255,0.1)",
-    color:         "rgba(255,255,255,0.75)",
-    fontSize:      "17px",
-    cursor:        "pointer",
-    transition:    "background 0.1s",
+    flex:         1,
+    padding:      "0",
+    height:       "52px",
+    borderRadius: "10px",
+    background:   "transparent",
+    border:       "1px solid rgba(255,255,255,0.1)",
+    color:        "rgba(255,255,255,0.75)",
+    fontSize:     "17px",
+    cursor:       "pointer",
+    transition:   "background 0.1s",
   },
   bsKey: {
     background: "rgba(255,255,255,0.05)",
