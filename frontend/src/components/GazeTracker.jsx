@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { getDwellMs, getGazeStability } from "../utils/settings";
 
 const STORAGE_KEY = "voxen_eye_enabled";
 const ALPHA = 0.25; // EMA smoothing — lower = smoother but more lag
+const getTimestamp = () => Date.now();
 
 export default function GazeTracker() {
   const navigate = useNavigate();
@@ -26,11 +27,19 @@ export default function GazeTracker() {
   useEffect(() => { enabledRef.current = enabled; }, [enabled]);
 
   // ── dwell animation loop ─────────────────────────────────────────────────
-  function startDwell(btn) {
+  const stopDwell = useCallback(() => {
+    cancelAnimationFrame(dwellRafRef.current);
+    gazedBtnRef.current  = null;
+    dwellStartRef.current = null;
+    setDwellProgress(0);
+    setGazedRect(null);
+  }, []);
+
+  const startDwell = useCallback((btn) => {
     if (gazedBtnRef.current === btn) return; // already running for this button
     stopDwell();
     gazedBtnRef.current = btn;
-    dwellStartRef.current = performance.now();
+    dwellStartRef.current = getTimestamp();
 
     const r      = btn.getBoundingClientRect();
     const radius = window.getComputedStyle(btn).borderRadius;
@@ -39,7 +48,7 @@ export default function GazeTracker() {
 
     function tick() {
       if (!gazedBtnRef.current) return;
-      const elapsed = performance.now() - dwellStartRef.current;
+      const elapsed = getTimestamp() - dwellStartRef.current;
       const prog    = Math.min(elapsed / getDwellMs(), 1);
 
       // Update overlay rect in case layout shifted
@@ -56,52 +65,37 @@ export default function GazeTracker() {
       }
     }
     dwellRafRef.current = requestAnimationFrame(tick);
+  }, [stopDwell]);
+
+  function tryEnd() {
+    if (window.webgazer) try { window.webgazer.end(); } catch (_){ void _; }
   }
 
-  function stopDwell() {
-    cancelAnimationFrame(dwellRafRef.current);
-    gazedBtnRef.current  = null;
-    dwellStartRef.current = null;
-    setDwellProgress(0);
-    setGazedRect(null);
-  }
-
-  // ── WebGazer hit-test — called every ~30ms from gaze listener ───────────
-  function handleGaze(x, y) {
-    if (!enabledRef.current) return;
-
-    // Find button under gaze point
-    const el  = document.elementFromPoint(x, y);
-    const btn = el?.closest("button") ?? null;
-    // Ignore our own control buttons
-    const target = (btn && !btn.disabled && !btn.dataset.gazeControl) ? btn : null;
-
-    // Stability buffer: require N consecutive frames on same button before dwelling
-    const stable = stableRef.current;
-    if (target === stable.btn) {
-      stable.frames++;
-    } else {
-      stable.btn    = target;
-      stable.frames = 1;
-      stopDwell(); // gaze moved — cancel current dwell immediately
-    }
-
-    if (target && stable.frames >= getGazeStability()) {
-      startDwell(target);
-    }
+  function injectHideCSS() {
+    if (document.getElementById("voxen-hide-webgazer")) return;
+    const style = document.createElement("style");
+    style.id    = "voxen-hide-webgazer";
+    style.textContent = `
+      #webgazerVideoContainer, #webgazerFaceOverlay,
+      #webgazerFaceFeedbackBox, #webgazerVideoFeed,
+      #webgazerFaceOverlayCanvas { display: none !important; }
+    `;
+    document.head.appendChild(style);
   }
 
   // ── WebGazer lifecycle ───────────────────────────────────────────────────
   useEffect(() => {
     if (!enabled) {
       tryEnd();
-      stopDwell();
-      setGazePos(null);
-      setStatus("idle");
+      queueMicrotask(() => {
+        stopDwell();
+        setGazePos(null);
+        setStatus("idle");
+      });
       return;
     }
 
-    setStatus("loading");
+    queueMicrotask(() => setStatus("loading"));
     injectHideCSS();
 
     function startGazer() {
@@ -115,14 +109,27 @@ export default function GazeTracker() {
             s.x = ALPHA * data.x + (1 - ALPHA) * s.x;
             s.y = ALPHA * data.y + (1 - ALPHA) * s.y;
             setGazePos({ x: Math.round(s.x), y: Math.round(s.y) });
-            handleGaze(s.x, s.y);
+            const el  = document.elementFromPoint(s.x, s.y);
+            const btn = el?.closest("button") ?? null;
+            const target = (btn && !btn.disabled && !btn.dataset.gazeControl) ? btn : null;
+            const stable = stableRef.current;
+            if (target === stable.btn) {
+              stable.frames++;
+            } else {
+              stable.btn    = target;
+              stable.frames = 1;
+              stopDwell();
+            }
+            if (target && stable.frames >= getGazeStability()) {
+              startDwell(target);
+            }
           });
 
         const result = window.webgazer.begin();
         const afterBegin = () => {
-          try { window.webgazer.showVideoPreview(false); }     catch (_) {}
-          try { window.webgazer.showPredictionPoints(false); } catch (_) {}
-          try { window.webgazer.addMouseEventListeners(); }    catch (_) {}
+          try { window.webgazer.showVideoPreview(false); }     catch (_){ void _; }
+          try { window.webgazer.showPredictionPoints(false); } catch (_){ void _; }
+          try { window.webgazer.addMouseEventListeners(); }    catch (_){ void _; }
           injectHideCSS();
           setStatus("active");
         };
@@ -146,23 +153,7 @@ export default function GazeTracker() {
     }
 
     return () => { tryEnd(); stopDwell(); };
-  }, [enabled]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  function tryEnd() {
-    if (window.webgazer) try { window.webgazer.end(); } catch (_) {}
-  }
-
-  function injectHideCSS() {
-    if (document.getElementById("voxen-hide-webgazer")) return;
-    const style = document.createElement("style");
-    style.id    = "voxen-hide-webgazer";
-    style.textContent = `
-      #webgazerVideoContainer, #webgazerFaceOverlay,
-      #webgazerFaceFeedbackBox, #webgazerVideoFeed,
-      #webgazerFaceOverlayCanvas { display: none !important; }
-    `;
-    document.head.appendChild(style);
-  }
+  }, [enabled, stopDwell, startDwell]);
 
   function toggle() {
     const next = !enabled;

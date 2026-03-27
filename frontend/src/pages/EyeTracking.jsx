@@ -30,6 +30,39 @@ const LI = 468, LO = 33,  LN = 133, LT = 159, LB = 145;
 // right eye
 const RI = 473, RO = 263, RN = 362, RT = 386, RB = 374;
 
+function horiz(lm, iris, a, b) {
+  const d = lm[b].x - lm[a].x;
+  return Math.abs(d) < 1e-4 ? 0.5 : (lm[iris].x - lm[a].x) / d;
+}
+function vert(lm, iris, a, b) {
+  const d = lm[b].y - lm[a].y;
+  return Math.abs(d) < 1e-4 ? 0.5 : (lm[iris].y - lm[a].y) / d;
+}
+
+function classify(h, v, cal) {
+  const hMid  = (cal.left.h  + cal.right.h)  / 2;
+  const vMid  = (cal.top.v   + cal.bottom.v)  / 2;
+  const hHalf = Math.abs(cal.right.h - cal.left.h) / 2;
+  const vHalf = Math.abs(cal.bottom.v - cal.top.v)  / 2;
+
+  if (hHalf < 0.005 || vHalf < 0.005) return "CENTER";
+
+  const hDev = (h - hMid) / hHalf;
+  const vDev = (v - vMid) / vHalf;
+  const THRESHOLD = 0.35;
+  const leftIsLow = cal.left.h <= cal.right.h;
+  const topIsLow  = cal.top.v  <= cal.bottom.v;
+
+  if (Math.abs(hDev) >= Math.abs(vDev)) {
+    if (hDev < -THRESHOLD) return leftIsLow ? "LEFT"   : "RIGHT";
+    if (hDev >  THRESHOLD) return leftIsLow ? "RIGHT"  : "LEFT";
+  } else {
+    if (vDev < -THRESHOLD) return topIsLow  ? "TOP"    : "BOTTOM";
+    if (vDev >  THRESHOLD) return topIsLow  ? "BOTTOM" : "TOP";
+  }
+  return "CENTER";
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 export default function EyeTracking() {
   const navigate = useNavigate();
@@ -56,11 +89,67 @@ export default function EyeTracking() {
   // keep calDataRef in sync
   useEffect(() => { calDataRef.current = calData; }, [calData]);
 
+  // ── process face mesh results ─────────────────────────────────────────────
+  const onResults = useCallback((results) => {
+    const faces = results.multiFaceLandmarks;
+    if (!faces || faces.length === 0) {
+      setFaceFound(false);
+      setDbg(prev => prev + " |noface");
+      return;
+    }
+    setDbg(prev => prev.includes("face!") ? prev : prev + " |face!");
+    setFaceFound(true);
+    const lm = faces[0];
+
+    // Compute iris ratio for each eye: 0 = iris at corner A, 1 = iris at corner B
+    const hL = horiz(lm, LI, LO, LN);
+    const vL = vert (lm, LI, LT, LB);
+    const hR = horiz(lm, RI, RO, RN);
+    const vR = vert (lm, RI, RT, RB);
+
+    // Average both eyes
+    const rawH = (hL + hR) / 2;
+    const rawV = (vL + vR) / 2;
+
+    // EMA smoothing
+    const s = smoothRef.current;
+    s.h = ALPHA * rawH + (1 - ALPHA) * s.h;
+    s.v = ALPHA * rawV + (1 - ALPHA) * s.v;
+
+    setRatios({ h: s.h.toFixed(3), v: s.v.toFixed(3) });
+
+    // Collect RAW (unsmoothed) calibration samples for accuracy
+    if (collectingRef.current) {
+      calBufRef.current.push({ h: rawH, v: rawV });
+    }
+
+    // Zone classification (only if fully calibrated)
+    const cal = calDataRef.current;
+    const calOk = cal && cal.center && cal.left && cal.right && cal.top && cal.bottom;
+    if (calOk) {
+      const z = classify(s.h, s.v, cal);
+
+      // Stability filter: only commit to a zone after ZONE_FRAMES consecutive matches
+      const hist = zoneHistRef.current;
+      hist.push(z);
+      if (hist.length > ZONE_FRAMES) hist.shift();
+      if (hist.length === ZONE_FRAMES && hist.every(x => x === z)) {
+        setZone(z);
+      }
+
+      setDbg(`h:${s.h.toFixed(3)} v:${s.v.toFixed(3)} | ${z}`);
+    } else {
+      setDbg(`h:${s.h.toFixed(3)} v:${s.v.toFixed(3)} | NEEDS CAL`);
+    }
+  }, []);
+
   // ── init MediaPipe ────────────────────────────────────────────────────────
   useEffect(() => {
     if (!window.FaceMesh) {
-      setErrMsg("MediaPipe FaceMesh not loaded. Check index.html.");
-      setStatus("error");
+      queueMicrotask(() => {
+        setErrMsg("MediaPipe FaceMesh not loaded. Check index.html.");
+        setStatus("error");
+      });
       return;
     }
 
@@ -128,106 +217,11 @@ export default function EyeTracking() {
       running = false;
       if (rafId) cancelAnimationFrame(rafId);
       if (stream) stream.getTracks().forEach(t => t.stop());
-      try { fm.close(); }   catch (_) {}
-      try { document.body.removeChild(video); } catch (_) {}
+      try { fm.close(); }   catch (_){ void _; }
+      try { document.body.removeChild(video); } catch (_){ void _; }
       faceMeshRef.current = null;
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── process face mesh results ─────────────────────────────────────────────
-  function onResults(results) {
-    const faces = results.multiFaceLandmarks;
-    if (!faces || faces.length === 0) {
-      setFaceFound(false);
-      setDbg(prev => prev + " |noface");
-      return;
-    }
-    setDbg(prev => prev.includes("face!") ? prev : prev + " |face!");
-    setFaceFound(true);
-    const lm = faces[0];
-
-    // Compute iris ratio for each eye: 0 = iris at corner A, 1 = iris at corner B
-    const hL = horiz(lm, LI, LO, LN);
-    const vL = vert (lm, LI, LT, LB);
-    const hR = horiz(lm, RI, RO, RN);
-    const vR = vert (lm, RI, RT, RB);
-
-    // Average both eyes
-    const rawH = (hL + hR) / 2;
-    const rawV = (vL + vR) / 2;
-
-    // EMA smoothing
-    const s = smoothRef.current;
-    s.h = ALPHA * rawH + (1 - ALPHA) * s.h;
-    s.v = ALPHA * rawV + (1 - ALPHA) * s.v;
-
-    setRatios({ h: s.h.toFixed(3), v: s.v.toFixed(3) });
-
-    // Collect RAW (unsmoothed) calibration samples for accuracy
-    if (collectingRef.current) {
-      calBufRef.current.push({ h: rawH, v: rawV });
-    }
-
-    // Zone classification (only if fully calibrated)
-    const cal = calDataRef.current;
-    const calOk = cal && cal.center && cal.left && cal.right && cal.top && cal.bottom;
-    if (calOk) {
-      const z = classify(s.h, s.v, cal);
-
-      // Stability filter: only commit to a zone after ZONE_FRAMES consecutive matches
-      const hist = zoneHistRef.current;
-      hist.push(z);
-      if (hist.length > ZONE_FRAMES) hist.shift();
-      if (hist.length === ZONE_FRAMES && hist.every(x => x === z)) {
-        setZone(z);
-      }
-
-      setDbg(`h:${s.h.toFixed(3)} v:${s.v.toFixed(3)} | ${z}`);
-    } else {
-      setDbg(`h:${s.h.toFixed(3)} v:${s.v.toFixed(3)} | NEEDS CAL`);
-    }
-  }
-
-  function horiz(lm, iris, a, b) {
-    const d = lm[b].x - lm[a].x;
-    return Math.abs(d) < 1e-4 ? 0.5 : (lm[iris].x - lm[a].x) / d;
-  }
-  function vert(lm, iris, a, b) {
-    const d = lm[b].y - lm[a].y;
-    return Math.abs(d) < 1e-4 ? 0.5 : (lm[iris].y - lm[a].y) / d;
-  }
-
-  // ── zone classification ───────────────────────────────────────────────────
-  // Does NOT depend on center accuracy — uses midpoint between edge points.
-  // Also handles inverted calibration (user had head turned during cal).
-  function classify(h, v, cal) {
-    const hMid  = (cal.left.h  + cal.right.h)  / 2;
-    const vMid  = (cal.top.v   + cal.bottom.v)  / 2;
-    const hHalf = Math.abs(cal.right.h - cal.left.h) / 2;
-    const vHalf = Math.abs(cal.bottom.v - cal.top.v)  / 2;
-
-    if (hHalf < 0.005 || vHalf < 0.005) return "CENTER";  // bad cal
-
-    // Signed deviation from midpoint, normalised to roughly [-1, +1]
-    const hDev = (h - hMid) / hHalf;
-    const vDev = (v - vMid) / vHalf;
-
-    const THRESHOLD = 0.35;
-
-    // Direction flags — handle inverted calibration gracefully
-    const leftIsLow = cal.left.h <= cal.right.h;
-    const topIsLow  = cal.top.v  <= cal.bottom.v;
-
-    // Pick the axis with the stronger signal
-    if (Math.abs(hDev) >= Math.abs(vDev)) {
-      if (hDev < -THRESHOLD) return leftIsLow ? "LEFT"   : "RIGHT";
-      if (hDev >  THRESHOLD) return leftIsLow ? "RIGHT"  : "LEFT";
-    } else {
-      if (vDev < -THRESHOLD) return topIsLow  ? "TOP"    : "BOTTOM";
-      if (vDev >  THRESHOLD) return topIsLow  ? "BOTTOM" : "TOP";
-    }
-    return "CENTER";
-  }
+  }, [onResults]);
 
   // ── calibration step logic ────────────────────────────────────────────────
   // Called when we enter "cal" status or advance to the next step
@@ -235,7 +229,7 @@ export default function EyeTracking() {
     if (status !== "cal") return;
 
     // countdown → record → advance
-    setCountdown(CAL_SECS);
+    queueMicrotask(() => setCountdown(CAL_SECS));
     calBufRef.current = [];
     collectingRef.current = false;
 
@@ -285,7 +279,7 @@ export default function EyeTracking() {
     }, 800); // brief pause before recording starts
 
     return () => clearTimeout(startDelay);
-  }, [status, calStep]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [status, calStep]);
 
   function recalibrate() {
     localStorage.removeItem(CAL_KEY);

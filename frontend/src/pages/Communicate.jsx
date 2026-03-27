@@ -58,12 +58,14 @@ export default function Communicate() {
 
   // ── send to WS when words change ──────────────────────────────────────────
   useEffect(() => {
-    if (words.length === 0) { setSuggestions([]); return; }
+    if (words.length === 0) return;
     const ws = wsRef.current;
     if (ws?.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ text: words.join(" "), words, top_k: 8 }));
     }
   }, [words]);
+
+  const visibleSuggestions = words.length === 0 ? [] : suggestions;
 
   // ── starter click → enter drum mode ──────────────────────────────────────
   function selectStarter(phrase) {
@@ -72,15 +74,15 @@ export default function Communicate() {
   }
 
   // ── drum: circular slot → word map ────────────────────────────────────────
-  const n = suggestions.length;
+  const n = visibleSuggestions.length;
   const wrap = i => n === 0 ? -1 : ((i % n) + n) % n;
   const slotWords = {};
   if (n > 0) {
     [-2, -1, 0, 1, 2].forEach(slot => {
-      slotWords[slot] = suggestions[wrap(selIdx + slot)];
+      slotWords[slot] = visibleSuggestions[wrap(selIdx + slot)];
     });
   }
-  const centeredWord = n > 0 ? suggestions[selIdx] : null;
+  const centeredWord = n > 0 ? visibleSuggestions[selIdx] : null;
 
   function scrollUp()   { setSelIdx(i => wrap(i - 1)); }
   function scrollDown() { setSelIdx(i => wrap(i + 1)); }
