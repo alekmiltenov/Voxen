@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+pymongo
+pydantic
+python-jose[cryptography]
+bcrypt
+transformers
+torch
+python-dotenv
+twilio

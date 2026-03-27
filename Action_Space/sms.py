@@ -3,33 +3,40 @@ from dotenv import load_dotenv
 import os
 
 load_dotenv()
-ACCOUNT_SID = os.getenv("ACCOUNT_SID")
-AUTH_TOKEN = os.getenv("AUTH_TOKEN")
-MESSAGING_SERVICE_SID = os.getenv("MESSAGING_SERVICE_SID")
-
-client = Client(ACCOUNT_SID, AUTH_TOKEN)
 
 
 def send_sms(to_phone: str, message: str):
-    try:
-        msg = client.messages.create(
-            messaging_service_sid=MESSAGING_SERVICE_SID,
-            body=message,
-            to=to_phone,
-        )
+    # Build client here so missing creds don't crash the import
+    account_sid          = os.getenv("ACCOUNT_SID")
+    auth_token           = os.getenv("AUTH_TOKEN")
+    messaging_service_sid = os.getenv("MESSAGING_SERVICE_SID")
 
-        return {
-            "success": True,
-            "status": "sent",
-            "sid": msg.sid,
-            "to": to_phone,
-            "message": "SMS sent successfully",
-        }
-
-    except Exception as e:
+    if not all([account_sid, auth_token, messaging_service_sid]):
         return {
             "success": False,
             "status": "error",
-            "error": str(e),
+            "error": "Twilio credentials not set in .env",
+            "message": "SMS not sent — add ACCOUNT_SID, AUTH_TOKEN, MESSAGING_SERVICE_SID to .env",
+        }
+
+    try:
+        client = Client(account_sid, auth_token)
+        msg    = client.messages.create(
+            messaging_service_sid=messaging_service_sid,
+            body=message,
+            to=to_phone,
+        )
+        return {
+            "success": True,
+            "status":  "sent",
+            "sid":     msg.sid,
+            "to":      to_phone,
+            "message": "SMS sent successfully",
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "status":  "error",
+            "error":   str(e),
             "message": "Failed to send SMS",
         }
