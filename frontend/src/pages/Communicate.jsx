@@ -117,10 +117,7 @@ export default function Communicate() {
       <div style={s.page}>
         <div style={s.starterTop}>
           <button style={s.pill} onClick={() => navigate("/")}>← Back</button>
-          <button style={s.pill}
-            onClick={() => navigate("/keyboard", { state: { words } })}>
-            keyboard
-          </button>
+          <div style={{ width: 80 }} />
         </div>
 
         <div style={s.starterBody}>
@@ -138,6 +135,13 @@ export default function Communicate() {
               </button>
             ))}
           </div>
+          <button
+            style={s.keyboardBtn}
+            onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.08)"}
+            onMouseLeave={e => e.currentTarget.style.background = "rgba(255,255,255,0.03)"}
+            onClick={() => navigate("/keyboard", { state: { words } })}>
+            Keyboard
+          </button>
         </div>
       </div>
     );
@@ -269,6 +273,20 @@ const s = {
     cursor:       "pointer",
     transition:   "background 0.15s",
     letterSpacing:"-0.2px",
+  },
+  keyboardBtn: {
+    padding:      "28px 16px",
+    borderRadius: "14px",
+    background:   "rgba(255,255,255,0.03)",
+    border:       "1px solid rgba(255,255,255,0.08)",
+    color:        "rgba(255,255,255,0.85)",
+    fontSize:     "24px",
+    fontWeight:   "400",
+    cursor:       "pointer",
+    transition:   "background 0.15s",
+    letterSpacing:"-0.2px",
+    width:        "calc(50% + 7px)",
+    margin:       "24px auto 0",
   },
 
   // ── drum page ──
