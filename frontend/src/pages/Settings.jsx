@@ -1,30 +1,28 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getDwellMs, getGazeStability, saveSettings, DEFAULTS } from "../utils/settings";
+import { getDwellMs, saveSettings, DEFAULTS } from "../utils/settings";
 import DwellButton from "../components/DwellButton";
 
 export default function Settings() {
   const navigate = useNavigate();
-  const [dwellMs,       setDwellMs]       = useState(getDwellMs);
-  const [gazeStability, setGazeStability] = useState(getGazeStability);
-  const [saved, setSaved] = useState(false);
+  const [dwellMs, setDwellMs] = useState(getDwellMs);
+  const [saved,   setSaved]   = useState(false);
 
   function save() {
-    saveSettings({ dwellMs, gazeStability });
+    saveSettings({ dwellMs });
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   }
 
   function reset() {
     setDwellMs(DEFAULTS.dwellMs);
-    setGazeStability(DEFAULTS.gazeStability);
   }
 
   return (
     <div style={s.page}>
       <div style={s.topBar}>
         <DwellButton style={s.pill} onClick={() => navigate(-1)}>← Back</DwellButton>
-        <span style={s.title}>Eye Tracking Settings</span>
+        <span style={s.title}>Settings</span>
         <div style={{ width: 80 }} />
       </div>
 
@@ -67,34 +65,6 @@ export default function Settings() {
             >
               hover me
             </DwellButton>
-          </div>
-        </div>
-
-        {/* ── Gaze Stability ── */}
-        <div style={s.group}>
-          <div style={s.groupHeader}>
-            <span style={s.groupLabel}>Gaze Stability</span>
-            <span style={s.groupValue}>{gazeStability} frame{gazeStability !== 1 ? "s" : ""}</span>
-          </div>
-          <p style={s.groupDesc}>
-            How many frames your gaze can drift off a button before the dwell resets.
-            Higher = more forgiving of eye jitter, but slower to cancel.
-          </p>
-          <input
-            type="range"
-            min={1}
-            max={15}
-            step={1}
-            value={gazeStability}
-            onChange={e => setGazeStability(Number(e.target.value))}
-            style={s.slider}
-          />
-          <div style={s.sliderTicks}>
-            <span>1</span>
-            <span>4</span>
-            <span>8</span>
-            <span>12</span>
-            <span>15</span>
           </div>
         </div>
 

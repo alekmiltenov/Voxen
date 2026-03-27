@@ -4,9 +4,11 @@ import Communicate from "./pages/Communicate";
 import Actions     from "./pages/Actions";
 import Keyboard    from "./pages/Keyboard";
 import AIChat      from "./pages/AIChat";
-import EyeTracking from "./pages/EyeTracking";
+import Settings    from "./pages/Settings";
+import Login       from "./pages/Login";
+import Signup      from "./pages/Signup";
+import Pain        from "./pages/Pain";
 
-import TestSocket from "./pages/TestControl";
 function App() {
   return (
     <BrowserRouter>
@@ -16,7 +18,10 @@ function App() {
         <Route path="/actions"     element={<Actions />} />
         <Route path="/keyboard"    element={<Keyboard />} />
         <Route path="/ai-chat"     element={<AIChat />} />
-        <Route path="/eye"         element={<EyeTracking />} />
+        <Route path="/settings"    element={<Settings />} />
+        <Route path="/login"       element={<Login />} />
+        <Route path="/signup"      element={<Signup />} />
+        <Route path="/pain"        element={<Pain />} />
       </Routes>
     </BrowserRouter>
   );

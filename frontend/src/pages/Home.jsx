@@ -38,9 +38,9 @@ export default function Home() {
       <DwellButton
         style={s.calibrateBtn}
         hoverBg="rgba(255,255,255,0.06)"
-        onClick={() => navigate("/eye")}
+        onClick={() => navigate("/settings")}
       >
-        👁 Eye Tracking
+        ⚙ Settings
       </DwellButton>
     </div>
   );
