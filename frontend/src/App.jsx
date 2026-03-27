@@ -6,6 +6,7 @@ import Keyboard    from "./pages/Keyboard";
 import AIChat      from "./pages/AIChat";
 import EyeTracking from "./pages/EyeTracking";
 
+import TestSocket from "./pages/TestControl";
 function App() {
   return (
     <BrowserRouter>
