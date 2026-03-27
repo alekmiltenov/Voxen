@@ -1,8 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-<<<<<<< Updated upstream
-import DwellButton from "../components/DwellButton";
-=======
 import { useHeadControl } from "./HeadControlContext";
 
 const CARDS = [
@@ -29,7 +26,6 @@ const CARDS = [
     sub:   "One-tap for common needs",
   },
 ];
->>>>>>> Stashed changes
 
 export default function Home() {
   const navigate = useNavigate();
@@ -53,44 +49,6 @@ export default function Home() {
 
   return (
     <div style={s.page}>
-<<<<<<< Updated upstream
-      <p style={s.title}>Voxen</p>
-      <div style={s.grid}>
-        <DwellButton style={s.card}
-          hoverBg="rgba(255,255,255,0.05)"
-          onClick={() => navigate("/communicate")}>
-          <span style={s.cardIcon}>
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none"
-              stroke="rgba(255,255,255,0.7)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-            </svg>
-          </span>
-          <span style={s.cardTitle}>Communicate</span>
-          <span style={s.cardSub}>Build sentences with suggestions</span>
-        </DwellButton>
-
-        <DwellButton style={s.card}
-          hoverBg="rgba(255,255,255,0.05)"
-          onClick={() => navigate("/actions")}>
-          <span style={s.cardIcon}>
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none"
-              stroke="rgba(255,255,255,0.7)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-            </svg>
-          </span>
-          <span style={s.cardTitle}>Actions</span>
-          <span style={s.cardSub}>One-tap for common needs</span>
-        </DwellButton>
-      </div>
-
-      <DwellButton
-        style={s.calibrateBtn}
-        hoverBg="rgba(255,255,255,0.06)"
-        onClick={() => navigate("/settings")}
-      >
-        ⚙ Settings
-      </DwellButton>
-=======
 
       {/* ── Top bar ── */}
       <div style={s.topBar}>
@@ -185,7 +143,6 @@ export default function Home() {
           FORWARD &nbsp;·&nbsp; confirm
         </p>
       )}
->>>>>>> Stashed changes
     </div>
   );
 }
@@ -288,20 +245,6 @@ const s = {
     fontSize: "14px",
     color:    "rgba(255,255,255,0.3)",
   },
-<<<<<<< Updated upstream
-  calibrateBtn: {
-    padding:      "12px 28px",
-    borderRadius: "14px",
-    background:   "transparent",
-    border:       "1px solid rgba(255,255,255,0.1)",
-    color:        "rgba(255,255,255,0.35)",
-    fontSize:     "14px",
-    fontWeight:   "300",
-    cursor:       "pointer",
-    letterSpacing: "0.04em",
-  },
-};
-=======
   hint: {
     marginTop:     4,
     fontSize:      11,
@@ -319,4 +262,3 @@ const s = {
     textTransform: "uppercase",
   },
 };
->>>>>>> Stashed changes

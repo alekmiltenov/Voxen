@@ -1,11 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiPost } from "../api";
-<<<<<<< Updated upstream
-import DwellButton from "../components/DwellButton";
-=======
 import { useHeadControl } from "./HeadControlContext";
->>>>>>> Stashed changes
 
 const ACTIONS = [
   { id: 2, label: "Emergency",  sub: "Send alert to caregiver", icon: "🚨" },
@@ -77,17 +73,6 @@ export default function Actions() {
 
       {/* ── 2×2 grid ── */}
       <div style={s.grid}>
-<<<<<<< Updated upstream
-        {ACTIONS.map(a => (
-          <DwellButton key={a.id} style={s.card}
-            hoverBg="rgba(255,255,255,0.05)"
-            onClick={() => a.id === 3 ? navigate("/ai-chat") : runAction(a.id)}>
-            <span style={s.icon}>{a.icon}</span>
-            <span style={s.label}>{a.label}</span>
-            <span style={s.sub}>{a.sub}</span>
-          </DwellButton>
-        ))}
-=======
         {ACTIONS.map((a, i) => {
           const isSelected = enabled && selIdx === i;
           return (
@@ -115,7 +100,6 @@ export default function Actions() {
             </button>
           );
         })}
->>>>>>> Stashed changes
       </div>
 
       {/* legend */}
