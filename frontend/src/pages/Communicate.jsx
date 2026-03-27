@@ -9,18 +9,6 @@ const DEFAULT_STARTERS = [
   "Please", "Thank you", "I am", "I would like",
 ];
 
-// ── Drum slot for each suggestion index ──────────────────────────────────
-// Best  (idx 0) → slot +1 (just below center)
-// 2nd   (idx 1) → slot -1 (just above center)
-// 3rd   (idx 2) → slot +2
-// 4th   (idx 3) → slot -2
-// ...alternating outward from center
-function initSlot(idx) {
-  return idx % 2 === 0
-    ? idx / 2 + 1                  // 0→+1, 2→+2, 4→+3
-    : -(Math.floor(idx / 2) + 1); // 1→-1, 3→-2, 5→-3
-}
-
 const SLOT_STYLE = {
   "-2": { opacity: 0.15, fontSize: "34px", fontWeight: 300 },
   "-1": { opacity: 0.42, fontSize: "54px", fontWeight: 300 },
@@ -33,11 +21,11 @@ export default function Communicate() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [words,        setWords]        = useState(location.state?.words ?? []);
-  const [starters,     setStarters]     = useState(DEFAULT_STARTERS);
-  const [suggestions,  setSuggestions]  = useState([]);
-  const [scrollOffset, setScrollOffset] = useState(0);
-  const [speaking,     setSpeaking]     = useState(false);
+  const [words,       setWords]       = useState(location.state?.words ?? []);
+  const [starters,    setStarters]    = useState(DEFAULT_STARTERS);
+  const [suggestions, setSuggestions] = useState([]);
+  const [selIdx,      setSelIdx]      = useState(0);
+  const [speaking,    setSpeaking]    = useState(false);
   const wsRef = useRef(null);
 
   const mode = words.length === 0 ? "starters" : "drum";
@@ -60,7 +48,7 @@ export default function Communicate() {
       const d = JSON.parse(e.data);
       if (d.suggestions) {
         setSuggestions(d.suggestions.map(s => s.word ?? s));
-        setScrollOffset(0);
+        setSelIdx(0);
       }
     };
     return () => ws.close();
@@ -78,29 +66,32 @@ export default function Communicate() {
   // ── starter click → enter drum mode ──────────────────────────────────────
   function selectStarter(phrase) {
     setWords(phrase.trim().split(/\s+/));
-    setScrollOffset(0);
+    setSelIdx(0);
   }
 
-  // ── drum: build slot → word map ───────────────────────────────────────────
+  // ── drum: circular slot → word map ────────────────────────────────────────
+  const n = suggestions.length;
+  const wrap = i => n === 0 ? -1 : ((i % n) + n) % n;
   const slotWords = {};
-  suggestions.forEach((word, idx) => {
-    const slot = initSlot(idx) - scrollOffset;
-    if (slot >= -2 && slot <= 2) slotWords[slot] = word;
-  });
-  const centeredWord = slotWords[0] ?? null;
+  if (n > 0) {
+    [-2, -1, 0, 1, 2].forEach(slot => {
+      slotWords[slot] = suggestions[wrap(selIdx + slot)];
+    });
+  }
+  const centeredWord = n > 0 ? suggestions[selIdx] : null;
 
-  function scrollUp()   { setScrollOffset(o => o + 1); }
-  function scrollDown() { setScrollOffset(o => o - 1); }
+  function scrollUp()   { setSelIdx(i => wrap(i - 1)); }
+  function scrollDown() { setSelIdx(i => wrap(i + 1)); }
 
   function confirmWord() {
     if (!centeredWord) return;
     setWords(prev => [...prev, centeredWord.trim()]);
-    setScrollOffset(0);
+    setSelIdx(0);
   }
 
   function backspace() {
-    setScrollOffset(0);
-    setWords(prev => prev.slice(0, -1)); // goes back to starters if was 1 word
+    setSelIdx(0);
+    setWords(prev => prev.slice(0, -1));
   }
 
   function speak() {
@@ -116,7 +107,7 @@ export default function Communicate() {
     window.speechSynthesis.cancel();
     setWords([]);
     setSuggestions([]);
-    setScrollOffset(0);
+    setSelIdx(0);
     setSpeaking(false);
   }
 
