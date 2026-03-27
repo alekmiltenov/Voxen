@@ -1,9 +1,9 @@
-from actions import call_caregiver, emergency_alert, ai_chat, turn_lights_on
+from actions import call_caregiver, emergency_alert, chat_with_ai, turn_lights_on
 
 ACTION_MAP = {
     1: call_caregiver,
     2: emergency_alert,
-    3: ai_chat,
+    3: chat_with_ai,
     4: turn_lights_on,
 }
 
