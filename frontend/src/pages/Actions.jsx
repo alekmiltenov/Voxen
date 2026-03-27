@@ -6,7 +6,7 @@ const ACTIONS = [
   { id: 2, label: "Emergency",  sub: "Send alert to caregiver", icon: "🚨" },
   { id: 1, label: "Call",       sub: "Call caregiver",          icon: "📞" },
   { id: 3, label: "AI Chat",    sub: "Open assistant",          icon: "🤖" },
-  { id: 4, label: "Lights",     sub: "Toggle smart lights",     icon: "💡" },
+  { id: 4, label: "Pain",     sub: "Choose the hurting body part",     icon: "❤️" },
 ];
 
 export default function Actions() {
@@ -15,6 +15,10 @@ export default function Actions() {
 
   async function runAction(id) {
     setStatus(null);
+    if (id === 4) {
+  navigate("/pain");
+  return;
+}
     try {
       const res = await apiPost("/actions/execute", { action: id });
       setStatus({ msg: res.message ?? "Done", ok: true });
@@ -76,9 +80,9 @@ const s = {
     background:   "transparent",
     border:       "1px solid rgba(255,255,255,0.12)",
     color:        "rgba(255,255,255,0.4)",
-    fontSize:     "14px",
+    fontSize:     "28px",
     cursor:       "pointer",
-    width:        80,
+    width:        130,
   },
   title: {
     fontSize:   "18px",

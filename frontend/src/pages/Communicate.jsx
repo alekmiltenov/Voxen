@@ -296,7 +296,7 @@ const s = {
     background:   "transparent",
     border:       "1px solid rgba(255,255,255,0.1)",
     color:        "rgba(255,255,255,0.35)",
-    fontSize:     "13px",
+    fontSize:     "28px",
     cursor:       "pointer",
   },
   sideBtn: {

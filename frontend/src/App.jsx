@@ -4,6 +4,7 @@ import Communicate from "./pages/Communicate";
 import Actions     from "./pages/Actions";
 import Keyboard    from "./pages/Keyboard";
 import CaretakerDashboard from "./pages/caretaker/CaretakerDashboard";
+import Pain from "./pages/Pain";
 
 import TestSocket from "./pages/TestControl";
 function App() {
@@ -16,6 +17,7 @@ function App() {
         <Route path="/keyboard"    element={<Keyboard />} />
         <Route path="/caretaker"   element={<CaretakerDashboard />} />
         <Route path="/test" element={<TestSocket />}  />
+        <Route path="/pain" element={<Pain />}  />
       </Routes>
     </BrowserRouter>
   );
