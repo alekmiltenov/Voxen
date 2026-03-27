@@ -5,6 +5,7 @@ import Actions     from "./pages/Actions";
 import Keyboard    from "./pages/Keyboard";
 import CaretakerDashboard from "./pages/caretaker/CaretakerDashboard";
 
+import TestSocket from "./pages/TestControl";
 function App() {
   return (
     <BrowserRouter>
@@ -14,6 +15,7 @@ function App() {
         <Route path="/actions"     element={<Actions />} />
         <Route path="/keyboard"    element={<Keyboard />} />
         <Route path="/caretaker"   element={<CaretakerDashboard />} />
+        <Route path="/test" element={<TestSocket />}  />
       </Routes>
     </BrowserRouter>
   );
