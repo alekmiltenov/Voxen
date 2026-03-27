@@ -1,125 +1,102 @@
 from flask import Flask, request, jsonify
-import logging
+from flask_socketio import SocketIO
 from flask_cors import CORS
-# махаме Flask spam логове
-log = logging.getLogger('werkzeug')
-log.setLevel(logging.ERROR)
+import logging
+
+# Suppress Flask access logs
+logging.getLogger('werkzeug').setLevel(logging.ERROR)
 
 app = Flask(__name__)
-CORS(app)
-
-# -------- SETTINGS --------
-
-mode = "MID"
-
-# filtering (EMA)
-filtered_x = 0
-filtered_y = 0
-filtered_z = 0
-alpha = 0.2
-
-# state
-last_command = None
-last_command_global = None
+CORS(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*")
 
 
-# -------- THRESHOLDS --------
+# -------- SETTINGS (tunable via /settings) --------
 
-def get_threshold():
-    if mode == "LOW":
-        return 3.0
-    elif mode == "MID":
-        return 2.0
-    else:  # HIGH
-        return 1.2
+alpha     = 0.6   # EMA smoothing — higher = more responsive, lower = smoother
+threshold = 2.0   # tilt magnitude required to trigger a command
+deadzone  = 0.8   # ignore small movements below this value
 
 
-def get_deadzone():
-    return 0.8
+# -------- STATE --------
+
+filtered_x = 0.0
+filtered_y = 0.0
+filtered_z = 0.0
+last_command = None   # tracks previous command to avoid repeats
 
 
 # -------- COMMAND LOGIC --------
 
 def detect_command(x, y):
-    threshold = get_threshold()
-    deadzone = get_deadzone()
-
-    # dead zone → нищо
     if abs(x) < deadzone and abs(y) < deadzone:
         return None
 
-    # LEFT / RIGHT
-    if y > threshold:
-        return "RIGHT"
-    elif y < -threshold:
-        return "LEFT"
-
-    # FORWARD / BACK
-    if x > threshold:
-        return "BACK"
-    elif x < -threshold:
-        return "FORWARD"
+    # Prefer the dominant axis
+    if abs(y) >= abs(x):
+        if y >  threshold: return "RIGHT"
+        if y < -threshold: return "LEFT"
+    else:
+        if x >  threshold: return "BACK"
+        if x < -threshold: return "FORWARD"
 
     return None
 
 
-# -------- RECEIVE RAW --------
+# -------- RECEIVE RAW DATA FROM ESP32 --------
 
 @app.route('/data', methods=['POST'])
-def data():
-    global filtered_x, filtered_y, filtered_z
-    global last_command, last_command_global
+def receive_data():
+    global filtered_x, filtered_y, filtered_z, last_command
 
-    data = request.json
+    body = request.json
+    x, y, z = body['x'], body['y'], body['z']
 
-    x = data['x']
-    y = data['y']
-    z = data['z']
-
-    # -------- FILTERING --------
+    # Exponential moving average filter
     filtered_x = alpha * x + (1 - alpha) * filtered_x
     filtered_y = alpha * y + (1 - alpha) * filtered_y
     filtered_z = alpha * z + (1 - alpha) * filtered_z
 
-    # -------- DETECT --------
     cmd = detect_command(filtered_x, filtered_y)
 
-    # -------- UPDATE GLOBAL COMMAND --------
-    if cmd != last_command and cmd is not None:
-        print(f"COMMAND: {cmd} | x={filtered_x:.2f}, y={filtered_y:.2f}")
+    if cmd is not None and cmd != last_command:
+        # New distinct command — push immediately to all connected frontends
         last_command = cmd
-        last_command_global = cmd
+        print(f"COMMAND: {cmd} | x={filtered_x:.2f}, y={filtered_y:.2f}")
+        socketio.emit('command', {'cmd': cmd})
 
-    return jsonify({"cmd": cmd})
+    elif cmd is None:
+        # Head returned to neutral — allow the same command to fire again next tilt
+        last_command = None
 
-
-# -------- FRONTEND FETCH --------
-
-@app.route('/command', methods=['GET'])
-def get_command():
-    return jsonify({"cmd": last_command_global})
+    return jsonify({"status": "ok"})
 
 
-# -------- MODE CONTROL --------
+# -------- SETTINGS ENDPOINTS --------
 
-@app.route('/mode', methods=['POST'])
-def set_mode():
-    global mode
+@app.route('/settings', methods=['GET'])
+def get_settings():
+    return jsonify({
+        "alpha":     alpha,
+        "threshold": threshold,
+        "deadzone":  deadzone
+    })
 
-    data = request.json
-    mode = data["mode"].upper()
+@app.route('/settings', methods=['POST'])
+def update_settings():
+    global alpha, threshold, deadzone
 
-    print("MODE:", mode)
+    body = request.json
+    if 'alpha'     in body: alpha     = float(body['alpha'])
+    if 'threshold' in body: threshold = float(body['threshold'])
+    if 'deadzone'  in body: deadzone  = float(body['deadzone'])
 
-    return jsonify({"mode": mode})
-
-
-@app.route('/mode', methods=['GET'])
-def get_mode():
-    return jsonify({"mode": mode})
+    print(f"SETTINGS updated — alpha={alpha:.2f}, threshold={threshold:.2f}, deadzone={deadzone:.2f}")
+    return jsonify({"alpha": alpha, "threshold": threshold, "deadzone": deadzone})
 
 
 # -------- RUN --------
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=5000)
+    # Use socketio.run() instead of app.run() to enable WebSocket support
+    socketio.run(app, host='0.0.0.0', port=5000)
