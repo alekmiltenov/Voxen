@@ -21,7 +21,6 @@ export default function Pain() {
 
   return (
     <div style={styles.container}>
-      {/* ✅ FIX */}
       <button style={styles.backBtn} onClick={() => navigate("/")}>
         ← Back
       </button>
