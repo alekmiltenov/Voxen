@@ -1,4 +1,6 @@
 import { useState } from "react";
+import presetsIcon from "../../assets/presets-icon.png";
+import settingsIcon from "../../assets/settings-icon.png";
 
 export default function CaretakerDashboard() {
   const [showSettings, setShowSettings] = useState(false);
@@ -14,8 +16,20 @@ export default function CaretakerDashboard() {
           <span style={s.appName}>CarePanel</span>
         </div>
         <div style={s.headerRight}>
-          <button style={s.iconBtn} title="Profile">👤</button>
-          <button style={s.iconBtn} onClick={() => setShowSettings(!showSettings)} title="Settings">⚙️</button>
+          <button style={s.iconBtn} title="Profile">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgb(136, 142, 153)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+              <circle cx="12" cy="7" r="4"/>
+            </svg>
+          </button>
+          <button style={s.iconBtn} onClick={() => setShowSettings(!showSettings)} title="Settings">
+            <img 
+              src={settingsIcon} 
+              alt="Settings" 
+              width="20" 
+              //style={{ filter: "invert(61%) sepia(7%) saturate(595%) hue-rotate(182deg) brightness(91%) contrast(85%)" }}
+            />
+          </button>
         </div>
       </div>
 
@@ -29,7 +43,6 @@ export default function CaretakerDashboard() {
             {/* Cursor Speed */}
             <div style={s.settingRow}>
               <div style={s.settingLeft}>
-                <div style={s.settingIcon}>🎯</div>
                 <div>
                   <div style={s.settingLabel}>Cursor Speed</div>
                   <div style={s.settingDesc}>Adjust pointer speed</div>
@@ -49,7 +62,6 @@ export default function CaretakerDashboard() {
             {/* Text Size */}
             <div style={s.settingRow}>
               <div style={s.settingLeft}>
-                <div style={s.settingIcon}>📋</div>
                 <div>
                   <div style={s.settingLabel}>Text Size</div>
                   <div style={s.settingDesc}>Font size for app</div>
@@ -69,7 +81,6 @@ export default function CaretakerDashboard() {
             {/* Confirm Delay */}
             <div style={s.settingRow}>
               <div style={s.settingLeft}>
-                <div style={s.settingIcon}>⏱️</div>
                 <div>
                   <div style={s.settingLabel}>Confirm Delay</div>
                   <div style={s.settingDesc}>Dwell time before activate</div>
@@ -96,20 +107,32 @@ export default function CaretakerDashboard() {
       {/* Main Content */}
       <div style={s.contentArea}>
         <div style={s.contentCenter}>
-          <h1 style={s.welcomeHeading}>Welcome back</h1>
+          <h1 style={s.welcomeHeading}>VOXEN</h1>
           <p style={s.welcomeSubtitle}>Manage presets and calibrate the communication experience.</p>
 
           <div style={s.cardsContainer}>
-            <button style={s.card} onMouseEnter={e => e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,200,200,0.15), 0 1px 3px rgba(0,0,0,0.12)"} onMouseLeave={e => e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.25)"}>
-              <div style={s.cardIconContainer}>📋</div>
+            <button style={s.card} onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+              <div style={s.cardIconContainer}>
+                <img 
+                  src={presetsIcon} 
+                  alt="Presets" 
+                  width="44" 
+                  //style={{ filter: "invert(61%) sepia(7%) saturate(595%) hue-rotate(182deg) brightness(91%) contrast(85%)" }} 
+                />
+              </div>
               <div style={s.cardText}>
                 <div style={s.cardLabel}>View Presets</div>
                 <div style={s.cardDesc}>See all configured phrases</div>
               </div>
             </button>
 
-            <button style={s.card} onMouseEnter={e => e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,200,200,0.15), 0 1px 3px rgba(0,0,0,0.12)"} onMouseLeave={e => e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.25)"}>
-              <div style={s.cardIconContainer}>✏️</div>
+            <button style={s.card} onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+              <div style={s.cardIconContainer}>
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="rgb(136, 142, 153)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                </svg>
+              </div>
               <div style={s.cardText}>
                 <div style={s.cardLabel}>Edit Layout</div>
                 <div style={s.cardDesc}>Customize and reorder presets</div>
@@ -126,12 +149,14 @@ const s = {
   page: {
     width: "100vw",
     height: "100vh",
-    background: "#0f1419",
+    background: "#111111",
     color: "#e8eef2",
     fontFamily: "system-ui, -apple-system, sans-serif",
     display: "flex",
     flexDirection: "column",
-    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "48px",
   },
   header: {
     position: "fixed",
@@ -140,8 +165,8 @@ const s = {
     right: 0,
     height: "60px",
     padding: "0 32px",
-    background: "#0f1419",
-    borderBottom: "1px solid rgba(0,200,200,0.1)",
+    background: "#111111",
+    borderBottom: "1px solid rgba(255,255,255,0.08)",
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
@@ -154,9 +179,9 @@ const s = {
   },
   appName: {
     fontSize: "18px",
-    fontWeight: "600",
-    letterSpacing: "-0.3px",
-    color: "#e8eef2",
+    fontWeight: "400",
+    letterSpacing: "0.03em",
+    color: "rgba(255,255,255,0.6)",
   },
   headerRight: {
     display: "flex",
@@ -168,14 +193,13 @@ const s = {
     borderRadius: "8px",
     background: "transparent",
     border: "1px solid rgba(255,255,255,0.08)",
-    color: "#888e99",
+    color: "rgb(136, 142, 153)",
     fontSize: "16px",
     cursor: "pointer",
-    transition: "all 0.2s",
+    transition: "background 0.2s",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    filter: "saturate(0)",
   },
   contentArea: {
     flex: 1,
@@ -195,63 +219,64 @@ const s = {
   },
   welcomeHeading: {
     margin: "0 0 8px 0",
-    fontSize: "36px",
-    fontWeight: "700",
-    color: "#e8eef2",
-    letterSpacing: "-0.5px",
+    fontSize: "18px",
+    fontWeight: "300",
+    color: "rgba(255,255,255,0.35)",
+    letterSpacing: "0.18em",
+    textTransform: "uppercase",
   },
   welcomeSubtitle: {
     margin: "0 0 32px 0",
     fontSize: "14px",
-    color: "#888e99",
+    color: "rgba(255,255,255,0.3)",
     lineHeight: "1.5",
   },
   cardsContainer: {
     width: "100%",
     display: "flex",
-    flexDirection: "column",
-    gap: "12px",
+    flexDirection: "row",
+    gap: "20px",
+    justifyContent: "center",
   },
   card: {
-    width: "100%",
-    padding: "20px",
-    borderRadius: "0.75rem",
-    background: "#151b24",
-    border: "1px solid rgba(0,200,200,0.1)",
+    flex: 1,
+    maxWidth: "200px",
+    padding: "32px 24px",
+    borderRadius: "20px",
+    background: "transparent",
+    border: "1px solid rgba(255,255,255,0.1)",
     display: "flex",
-    gap: "16px",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: "18px",
     cursor: "pointer",
-    transition: "all 0.3s ease",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
-    textAlign: "left",
+    transition: "background 0.2s",
   },
   cardIconContainer: {
     width: "48px",
     height: "48px",
     minWidth: "48px",
     borderRadius: "0.5rem",
-    background: "#00c8c8",
+    background: "transparent",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontSize: "24px",
-    transition: "all 0.3s ease",
-    filter: "saturate(0) brightness(1.2)",
   },
   cardText: {
     display: "flex",
     flexDirection: "column",
-    justifyContent: "center",
+    alignItems: "center",
+    gap: "8px",
   },
   cardLabel: {
-    fontSize: "16px",
-    fontWeight: "600",
-    color: "#e8eef2",
-    marginBottom: "4px",
+    fontSize: "24px",
+    fontWeight: "400",
+    color: "rgba(255,255,255,0.9)",
+    letterSpacing: "-0.2px",
   },
   cardDesc: {
-    fontSize: "13px",
-    color: "#888e99",
+    fontSize: "14px",
+    color: "rgba(255,255,255,0.3)",
   },
   settingsOverlay: {
     position: "fixed",
@@ -263,24 +288,28 @@ const s = {
   },
   settingsSheet: {
     width: "400px",
-    background: "#0f1419",
-    borderLeft: "1px solid rgba(0,200,200,0.1)",
+    height: "100vh",
+    boxSizing: "border-box",
+    background: "#0d0d0d",
+    borderLeft: "1px solid rgba(255,255,255,0.08)",
     padding: "24px",
     display: "flex",
     flexDirection: "column",
     gap: "24px",
-    overflowY: "auto",
+    overflow: "hidden",
   },
   settingsTitle: {
     margin: 0,
-    fontSize: "20px",
-    fontWeight: "600",
-    color: "#e8eef2",
+    fontSize: "18px",
+    fontWeight: "300",
+    color: "rgba(255,255,255,0.35)",
+    letterSpacing: "0.18em",
+    textTransform: "uppercase",
   },
   settingsDesc: {
     margin: 0,
     fontSize: "13px",
-    color: "#888e99",
+    color: "rgba(255,255,255,0.3)",
   },
   settingRow: {
     display: "flex",
@@ -298,28 +327,27 @@ const s = {
     width: "40px",
     height: "40px",
     borderRadius: "0.5rem",
-    background: "rgba(0,200,200,0.15)",
+    background: "transparent",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontSize: "18px",
     flexShrink: 0,
-    filter: "saturate(0) brightness(1.2)",
+    opacity: 0.6,
   },
   settingLabel: {
     fontSize: "14px",
-    fontWeight: "500",
-    color: "#e8eef2",
+    fontWeight: "400",
+    color: "rgba(255,255,255,0.9)",
   },
   settingDesc: {
     fontSize: "12px",
-    color: "#888e99",
+    color: "rgba(255,255,255,0.3)",
     marginTop: "2px",
   },
   settingValue: {
     fontSize: "14px",
     fontWeight: "500",
-    color: "#00c8c8",
+    color: "rgba(255,255,255,0.6)",
     fontVariantNumeric: "tabular-nums",
     textAlign: "right",
     minWidth: "40px",
@@ -332,18 +360,18 @@ const s = {
     border: "none",
     outline: "none",
     cursor: "pointer",
-    accentColor: "#00c8c8",
+    accentColor: "rgba(255,255,255,0.3)",
   },
   closeSettingsBtn: {
     padding: "10px 16px",
     borderRadius: "6px",
-    background: "rgba(0,200,200,0.15)",
-    border: "1px solid rgba(0,200,200,0.3)",
-    color: "#00c8c8",
+    background: "transparent",
+    border: "1px solid rgba(255,255,255,0.1)",
+    color: "rgba(255,255,255,0.6)",
     fontSize: "14px",
-    fontWeight: "500",
+    fontWeight: "400",
     cursor: "pointer",
-    transition: "all 0.2s",
+    transition: "background 0.2s",
     marginTop: "12px",
   },
 };
