@@ -4,11 +4,11 @@ import Communicate from "./pages/Communicate";
 import Actions     from "./pages/Actions";
 import Keyboard    from "./pages/Keyboard";
 import CaretakerDashboard from "./pages/caretaker/CaretakerDashboard";
-import { HeadControlProvider } from "./pages/HeadControlContext";
+import { InputControlProvider } from "./pages/InputControlContext";
 import Settings from "./pages/Settings";
 function App() {
   return (
-     <HeadControlProvider>
+     <InputControlProvider>
     <BrowserRouter>
       <Routes>
         <Route path="/"            element={<Home />} />
@@ -19,7 +19,7 @@ function App() {
         <Route path="/settings" element={<Settings />} />
       </Routes>
     </BrowserRouter>
-    </HeadControlProvider>
+    </InputControlProvider>
   );
 }
 

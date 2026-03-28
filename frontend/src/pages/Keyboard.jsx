@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { apiPost } from "../api";
-import { useHeadControl } from "./HeadControlContext";
+import { useInputControl } from "./InputControlContext";
 
 const ROWS = [
   ["Q","W","E","R","T","Y","U","I","O","P"],
@@ -12,17 +12,18 @@ const ROWS = [
 export default function Keyboard() {
   const navigate      = useNavigate();
   const location      = useLocation();
-  const { enabled, register, unregister } = useHeadControl();
+  const { mode, enabled, register, unregister } = useInputControl();
 
   const incomingWords = location.state?.words ?? [];
+  const returnTo      = location.state?.returnTo ?? "/communicate";
+  const extraState    = location.state?.history ? { history: location.state.history } : {};
+
   const [text, setText] = useState(incomingWords.join(" "));
 
-  // ── head control: only BACK is meaningful on the keyboard ────────────────
-  // The keyboard is a manual fallback — tilting left/right to type letters
-  // would be too slow. BACK navigates back to the communicate screen.
   useEffect(() => {
     register((cmd) => {
-      if (cmd === "BACK") navigate("/communicate", { state: { words: incomingWords } });
+      if (cmd === "BACK" || cmd === "LEFT")
+        navigate(returnTo, { state: { words: incomingWords, ...extraState } });
     });
     return () => unregister();
   }, []);
@@ -54,7 +55,9 @@ export default function Keyboard() {
 
       {enabled && (
         <div style={s.headHint}>
-          Head control is active &mdash; tilt <strong>BACK</strong> to return to Communicate
+          {mode === "head"
+            ? <>Head control active — tilt <strong>BACK</strong> to return</>
+            : <>Eye control active — look <strong>LEFT</strong> to return</>}
         </div>
       )}
 
@@ -68,8 +71,7 @@ export default function Keyboard() {
         {ROWS.map((row, ri) => (
           <div key={ri} style={s.row}>
             {row.map(key => (
-              <button
-                key={key}
+              <button key={key}
                 style={key === "⌫" ? { ...s.key, ...s.bsKey } : s.key}
                 onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.08)"}
                 onMouseLeave={e => e.currentTarget.style.background = key === "⌫"
@@ -102,90 +104,39 @@ export default function Keyboard() {
 
 const s = {
   page: {
-    width:         "100vw",
-    height:        "100vh",
-    background:    "#111111",
-    display:       "flex",
-    flexDirection: "column",
-    padding:       "16px",
-    gap:           "14px",
+    width: "100vw", height: "100vh", background: "#111111",
+    display: "flex", flexDirection: "column", padding: "16px", gap: "14px",
   },
-  topBar: {
-    display:        "flex",
-    justifyContent: "space-between",
-    alignItems:     "center",
-  },
+  topBar: { display: "flex", justifyContent: "space-between", alignItems: "center" },
   pill: {
-    padding:      "8px 18px",
-    borderRadius: "20px",
-    background:   "transparent",
-    border:       "1px solid rgba(255,255,255,0.12)",
-    color:        "rgba(255,255,255,0.4)",
-    fontSize:     "14px",
-    cursor:       "pointer",
-    width:        80,
+    padding: "8px 18px", borderRadius: "20px", background: "transparent",
+    border: "1px solid rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.4)",
+    fontSize: "14px", cursor: "pointer", width: 80,
   },
   label: {
-    fontSize:      "14px",
-    color:         "rgba(255,255,255,0.25)",
-    letterSpacing: "0.1em",
-    textTransform: "uppercase",
+    fontSize: "14px", color: "rgba(255,255,255,0.25)",
+    letterSpacing: "0.1em", textTransform: "uppercase",
   },
   headHint: {
-    textAlign:     "center",
-    fontSize:      13,
-    color:         "rgba(255,255,255,0.25)",
-    letterSpacing: "0.04em",
-    padding:       "6px 0",
+    textAlign: "center", fontSize: 13, color: "rgba(255,255,255,0.25)",
+    letterSpacing: "0.04em", padding: "6px 0",
   },
   display: {
-    minHeight:    "64px",
-    padding:      "14px 20px",
-    borderRadius: "14px",
-    border:       "1px solid rgba(255,255,255,0.08)",
-    display:      "flex",
-    alignItems:   "center",
+    minHeight: "64px", padding: "14px 20px", borderRadius: "14px",
+    border: "1px solid rgba(255,255,255,0.08)", display: "flex", alignItems: "center",
   },
-  displayText: {
-    fontSize:   "26px",
-    fontWeight: "300",
-    color:      "#ffffff",
-  },
-  placeholder: {
-    fontSize: "20px",
-    color:    "rgba(255,255,255,0.2)",
-  },
-  keysArea: {
-    display:       "flex",
-    flexDirection: "column",
-    gap:           "6px",
-    flex:          1,
-  },
-  row: {
-    display: "flex",
-    gap:     "5px",
-  },
+  displayText: { fontSize: "26px", fontWeight: "300", color: "#ffffff" },
+  placeholder: { fontSize: "20px", color: "rgba(255,255,255,0.2)" },
+  keysArea: { display: "flex", flexDirection: "column", gap: "6px", flex: 1 },
+  row: { display: "flex", gap: "5px" },
   key: {
-    flex:         1,
-    padding:      "0",
-    height:       "52px",
-    borderRadius: "10px",
-    background:   "transparent",
-    border:       "1px solid rgba(255,255,255,0.1)",
-    color:        "rgba(255,255,255,0.75)",
-    fontSize:     "17px",
-    cursor:       "pointer",
-    transition:   "background 0.1s",
+    flex: 1, padding: "0", height: "52px", borderRadius: "10px",
+    background: "transparent", border: "1px solid rgba(255,255,255,0.1)",
+    color: "rgba(255,255,255,0.75)", fontSize: "17px", cursor: "pointer", transition: "background 0.1s",
   },
-  bsKey: {
-    background: "rgba(255,255,255,0.05)",
-    color:      "rgba(255,255,255,0.5)",
-  },
+  bsKey: { background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.5)" },
   doneKey: {
-    background: "rgba(255,255,255,0.85)",
-    border:     "none",
-    color:      "#111111",
-    fontWeight: "600",
-    transition: "background 0.1s",
+    background: "rgba(255,255,255,0.85)", border: "none", color: "#111111",
+    fontWeight: "600", transition: "background 0.1s",
   },
 };

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useHeadControl } from "./HeadControlContext";
+import { useInputControl } from "./InputControlContext";
 
 const CARDS = [
   {
@@ -27,40 +27,63 @@ const CARDS = [
   },
 ];
 
+const MODES = [
+  { value: "off",  label: "Off" },
+  { value: "head", label: "Head" },
+  { value: "eyes", label: "Eyes" },
+];
+
 export default function Home() {
   const navigate = useNavigate();
-  const { enabled, toggle, register, unregister } = useHeadControl();
+  const { mode, setControlMode, enabled, register, unregister } = useInputControl();
 
   const [selIdx, setSelIdx] = useState(0);
   const selRef = useRef(0);
-
   const setSel = (v) => { selRef.current = v; setSelIdx(v); };
 
-  // ── Head-control handler ─────────────────────────────────────────────────
+  const dwellRef = useRef({ idx: null, start: 0, fired: false });
+
   useEffect(() => {
     register((cmd) => {
-      if (cmd === "LEFT")    setSel(0);
-      if (cmd === "RIGHT")   setSel(1);
-      if (cmd === "FORWARD") navigate(CARDS[selRef.current].route);
-      // BACK has nowhere to go from home
+      if (mode === "head") {
+        if (cmd === "LEFT")    setSel(0);
+        if (cmd === "RIGHT")   setSel(1);
+        if (cmd === "FORWARD") navigate(CARDS[selRef.current].route);
+      } else {
+        // eyes: UP = Communicate, DOWN = Actions
+        // holding the direction for 1.5s confirms
+        let newIdx = null;
+        if (cmd === "UP")   newIdx = 0;
+        if (cmd === "DOWN") newIdx = 1;
+        if (cmd === "LEFT") newIdx = 0;
+
+        if (newIdx !== null) {
+          setSel(newIdx);
+          const d = dwellRef.current;
+          if (d.idx === newIdx && !d.fired) {
+            if (Date.now() - d.start >= 1500) {
+              d.fired = true;
+              navigate(CARDS[newIdx].route);
+            }
+          } else if (d.idx !== newIdx) {
+            dwellRef.current = { idx: newIdx, start: Date.now(), fired: false };
+          }
+        }
+
+        if (cmd === "FORWARD") navigate(CARDS[selRef.current].route);
+      }
     });
     return () => unregister();
-  }, []);
+  }, [mode]);
 
   return (
     <div style={s.page}>
 
       {/* ── Top bar ── */}
       <div style={s.topBar}>
-
-        {/* Settings gear — left side */}
-        <button
-          style={s.settingsBtn}
-          onClick={() => navigate("/settings")}
-          title="Settings"
+        <button style={s.settingsBtn} onClick={() => navigate("/settings")} title="Settings"
           onMouseEnter={e => e.currentTarget.style.color = "rgba(255,255,255,0.5)"}
-          onMouseLeave={e => e.currentTarget.style.color = "rgba(255,255,255,0.2)"}
-        >
+          onMouseLeave={e => e.currentTarget.style.color = "rgba(255,255,255,0.2)"}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="3"/>
@@ -75,29 +98,37 @@ export default function Home() {
           </svg>
         </button>
 
-        {/* Wordmark — centre */}
         <p style={s.wordmark}>Voxen</p>
 
-        {/* Head control toggle — right side */}
-        <button
-          onClick={toggle}
-          style={{
-            ...s.toggleBtn,
-            background:  enabled ? "rgba(34,197,94,0.12)"  : "rgba(255,255,255,0.04)",
-            borderColor: enabled ? "rgba(34,197,94,0.35)"  : "rgba(255,255,255,0.1)",
-            color:       enabled ? "#86efac"               : "rgba(255,255,255,0.3)",
-          }}
-        >
-          <div style={{
-            width:        7,
-            height:       7,
-            borderRadius: "50%",
-            background:   enabled ? "#22c55e" : "rgba(255,255,255,0.2)",
-            boxShadow:    enabled ? "0 0 8px #22c55e" : "none",
-            transition:   "all 0.3s",
-          }} />
-          {enabled ? "Head Control ON" : "Head Control OFF"}
-        </button>
+        {/* ── 3-way mode toggle ── */}
+        <div style={s.modeSwitch}>
+          {MODES.map(m => (
+            <button
+              key={m.value}
+              onClick={() => setControlMode(m.value)}
+              style={{
+                ...s.modeBtn,
+                background: mode === m.value
+                  ? (m.value === "off" ? "rgba(255,255,255,0.08)" : "rgba(34,197,94,0.15)")
+                  : "transparent",
+                color: mode === m.value
+                  ? (m.value === "off" ? "rgba(255,255,255,0.5)" : "#86efac")
+                  : "rgba(255,255,255,0.25)",
+                borderColor: mode === m.value
+                  ? (m.value === "off" ? "rgba(255,255,255,0.15)" : "rgba(34,197,94,0.4)")
+                  : "transparent",
+              }}
+            >
+              {m.value !== "off" && mode === m.value && (
+                <div style={{
+                  width: 6, height: 6, borderRadius: "50%",
+                  background: "#22c55e", boxShadow: "0 0 6px #22c55e",
+                }} />
+              )}
+              {m.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* ── Cards ── */}
@@ -119,7 +150,6 @@ export default function Home() {
               onClick={() => navigate(card.route)}
             >
               {isSelected && <div style={s.selectionRing} />}
-
               <span style={{
                 ...s.cardIcon,
                 color: isSelected ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.7)",
@@ -130,7 +160,9 @@ export default function Home() {
               <span style={s.cardSub}>{card.sub}</span>
 
               {enabled && (
-                <span style={s.hint}>{i === 0 ? "← LEFT" : "RIGHT →"}</span>
+                <span style={s.hint}>
+                  {mode === "head" ? (i === 0 ? "← LEFT" : "RIGHT →") : (i === 0 ? "↑ HOLD UP" : "↓ HOLD DOWN")}
+                </span>
               )}
             </button>
           );
@@ -139,8 +171,9 @@ export default function Home() {
 
       {enabled && (
         <p style={s.legend}>
-          LEFT / RIGHT &nbsp;·&nbsp; select &nbsp;&nbsp;&nbsp;
-          FORWARD &nbsp;·&nbsp; confirm
+          {mode === "head"
+            ? "LEFT / RIGHT · select     FORWARD · confirm"
+            : "↑ UP · Communicate     ↓ DOWN · Actions     HOLD to confirm"}
         </p>
       )}
     </div>
@@ -149,116 +182,53 @@ export default function Home() {
 
 const s = {
   page: {
-    width:          "100vw",
-    height:         "100vh",
-    background:     "#111111",
-    display:        "flex",
-    flexDirection:  "column",
-    alignItems:     "center",
-    justifyContent: "center",
-    gap:            "40px",
+    width: "100vw", height: "100vh", background: "#111111",
+    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "40px",
   },
   topBar: {
-    position:       "absolute",
-    top:            28,
-    left:           32,
-    right:          32,
-    display:        "flex",
-    alignItems:     "center",
-    justifyContent: "space-between",
+    position: "absolute", top: 28, left: 32, right: 32,
+    display: "flex", alignItems: "center", justifyContent: "space-between",
   },
   settingsBtn: {
-    display:      "flex",
-    alignItems:   "center",
-    justifyContent: "center",
-    width:        36,
-    height:       36,
-    borderRadius: "50%",
-    background:   "transparent",
-    border:       "none",
-    color:        "rgba(255,255,255,0.2)",
-    cursor:       "pointer",
-    padding:      0,
-    transition:   "color 0.2s ease",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    width: 36, height: 36, borderRadius: "50%", background: "transparent",
+    border: "none", color: "rgba(255,255,255,0.2)", cursor: "pointer", padding: 0, transition: "color 0.2s ease",
   },
   wordmark: {
-    fontSize:      "22px",
-    fontWeight:    "300",
-    color:         "rgba(255,255,255,0.35)",
-    margin:        0,
-    letterSpacing: "0.18em",
-    textTransform: "uppercase",
+    fontSize: "22px", fontWeight: "300", color: "rgba(255,255,255,0.35)",
+    margin: 0, letterSpacing: "0.18em", textTransform: "uppercase",
   },
-  toggleBtn: {
-    display:      "flex",
-    alignItems:   "center",
-    gap:          8,
-    padding:      "7px 16px",
-    borderRadius: 99,
-    border:       "1px solid",
-    fontSize:     13,
-    fontWeight:   500,
-    cursor:       "pointer",
-    letterSpacing:"0.04em",
-    transition:   "all 0.25s ease",
+  modeSwitch: {
+    display: "flex", gap: 4, background: "rgba(255,255,255,0.03)",
+    borderRadius: 99, padding: 3, border: "1px solid rgba(255,255,255,0.08)",
+  },
+  modeBtn: {
+    display: "flex", alignItems: "center", gap: 6,
+    padding: "6px 14px", borderRadius: 99, border: "1px solid",
+    fontSize: 12, fontWeight: 500, cursor: "pointer", letterSpacing: "0.04em",
+    transition: "all 0.2s ease",
   },
   grid: {
-    display:             "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap:                 "20px",
-    width:               "min(860px, 90vw)",
+    display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", width: "min(860px, 90vw)",
   },
   card: {
-    position:       "relative",
-    display:        "flex",
-    flexDirection:  "column",
-    alignItems:     "center",
-    justifyContent: "center",
-    gap:            "18px",
-    padding:        "56px 40px 44px",
-    borderRadius:   "20px",
-    border:         "1px solid",
-    cursor:         "pointer",
-    transition:     "all 0.18s ease",
-    overflow:       "hidden",
+    position: "relative", display: "flex", flexDirection: "column", alignItems: "center",
+    justifyContent: "center", gap: "18px", padding: "56px 40px 44px", borderRadius: "20px",
+    border: "1px solid", cursor: "pointer", transition: "all 0.18s ease", overflow: "hidden",
   },
   selectionRing: {
-    position:     "absolute",
-    inset:        -1,
-    borderRadius: 20,
-    border:       "2px solid rgba(255,255,255,0.35)",
-    pointerEvents:"none",
+    position: "absolute", inset: -1, borderRadius: 20,
+    border: "2px solid rgba(255,255,255,0.35)", pointerEvents: "none",
   },
-  cardIcon: {
-    display:        "flex",
-    alignItems:     "center",
-    justifyContent: "center",
-    transition:     "color 0.18s",
-  },
-  cardTitle: {
-    fontSize:      "24px",
-    fontWeight:    "400",
-    color:         "inherit",
-    letterSpacing: "-0.2px",
-  },
-  cardSub: {
-    fontSize: "14px",
-    color:    "rgba(255,255,255,0.3)",
-  },
+  cardIcon: { display: "flex", alignItems: "center", justifyContent: "center", transition: "color 0.18s" },
+  cardTitle: { fontSize: "24px", fontWeight: "400", color: "inherit", letterSpacing: "-0.2px" },
+  cardSub: { fontSize: "14px", color: "rgba(255,255,255,0.3)" },
   hint: {
-    marginTop:     4,
-    fontSize:      11,
-    color:         "rgba(255,255,255,0.2)",
-    letterSpacing: "0.08em",
-    textTransform: "uppercase",
+    marginTop: 4, fontSize: 11, color: "rgba(255,255,255,0.2)",
+    letterSpacing: "0.08em", textTransform: "uppercase",
   },
   legend: {
-    position:      "absolute",
-    bottom:        28,
-    fontSize:      12,
-    color:         "rgba(255,255,255,0.18)",
-    letterSpacing: "0.06em",
-    margin:        0,
-    textTransform: "uppercase",
+    position: "absolute", bottom: 28, fontSize: 12, color: "rgba(255,255,255,0.18)",
+    letterSpacing: "0.06em", margin: 0, textTransform: "uppercase",
   },
 };
