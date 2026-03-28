@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useInputControl } from "./InputControlContext";
+import { focusRing, focusedStyle, unfocusedBorderColor } from "../utils/focusStyle";
 
 const CARDS = [
   {
@@ -28,17 +29,18 @@ const CARDS = [
 ];
 
 const MODES = [
-  { value: "off",  label: "Off" },
+  { value: "off",  label: "Off"  },
   { value: "head", label: "Head" },
   { value: "eyes", label: "Eyes" },
+  { value: "cnn",  label: "CNN"  },
 ];
 
 export default function Home() {
   const navigate = useNavigate();
   const { mode, setControlMode, enabled, register, unregister } = useInputControl();
 
-  const [selIdx, setSelIdx] = useState(0);
-  const selRef = useRef(0);
+  const [selIdx, setSelIdx] = useState(null);
+  const selRef = useRef(null);
   const setSel = (v) => { selRef.current = v; setSelIdx(v); };
 
   const dwellRef = useRef({ idx: null, start: 0, fired: false });
@@ -48,10 +50,14 @@ export default function Home() {
       if (mode === "head") {
         if (cmd === "LEFT")    setSel(0);
         if (cmd === "RIGHT")   setSel(1);
-        if (cmd === "FORWARD") navigate(CARDS[selRef.current].route);
+        if (cmd === "FORWARD" && selRef.current !== null) navigate(CARDS[selRef.current].route);
+
+      } else if (mode === "cnn") {
+        if (cmd === "UP"   || cmd === "LEFT")  setSel(0);
+        if (cmd === "DOWN" || cmd === "RIGHT") setSel(1);
+        if (cmd === "FORWARD" && selRef.current !== null) navigate(CARDS[selRef.current].route);
+
       } else {
-        // eyes: UP = Communicate, DOWN = Actions
-        // holding the direction for 1.5s confirms
         let newIdx = null;
         if (cmd === "UP")   newIdx = 0;
         if (cmd === "DOWN") newIdx = 1;
@@ -61,16 +67,13 @@ export default function Home() {
           setSel(newIdx);
           const d = dwellRef.current;
           if (d.idx === newIdx && !d.fired) {
-            if (Date.now() - d.start >= 1500) {
-              d.fired = true;
-              navigate(CARDS[newIdx].route);
-            }
+            if (Date.now() - d.start >= 1500) { d.fired = true; navigate(CARDS[newIdx].route); }
           } else if (d.idx !== newIdx) {
             dwellRef.current = { idx: newIdx, start: Date.now(), fired: false };
           }
         }
 
-        if (cmd === "FORWARD") navigate(CARDS[selRef.current].route);
+        if (cmd === "FORWARD" && selRef.current !== null) navigate(CARDS[selRef.current].route);
       }
     });
     return () => unregister();
@@ -140,16 +143,15 @@ export default function Home() {
               key={i}
               style={{
                 ...s.card,
-                borderColor: isSelected ? "rgba(255,255,255,0.45)" : "rgba(255,255,255,0.1)",
-                background:  isSelected ? "rgba(255,255,255,0.05)" : "transparent",
-                color:       isSelected ? "rgba(255,255,255,0.9)"  : "rgba(255,255,255,0.7)",
+                ...(isSelected ? focusedStyle : {}),
+                borderColor: isSelected ? focusedStyle.borderColor : unfocusedBorderColor,
                 transform:   isSelected ? "scale(1.02)" : "scale(1)",
               }}
               onMouseEnter={e => !isSelected && (e.currentTarget.style.background = "rgba(255,255,255,0.05)")}
               onMouseLeave={e => !isSelected && (e.currentTarget.style.background = "transparent")}
               onClick={() => navigate(card.route)}
             >
-              {isSelected && <div style={s.selectionRing} />}
+              {isSelected && <div style={focusRing} />}
               <span style={{
                 ...s.cardIcon,
                 color: isSelected ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.7)",
@@ -215,10 +217,7 @@ const s = {
     position: "relative", display: "flex", flexDirection: "column", alignItems: "center",
     justifyContent: "center", gap: "18px", padding: "56px 40px 44px", borderRadius: "20px",
     border: "1px solid", cursor: "pointer", transition: "all 0.18s ease", overflow: "hidden",
-  },
-  selectionRing: {
-    position: "absolute", inset: -1, borderRadius: 20,
-    border: "2px solid rgba(255,255,255,0.35)", pointerEvents: "none",
+    background: "transparent", outline: "none", color: "rgba(255,255,255,0.7)",
   },
   cardIcon: { display: "flex", alignItems: "center", justifyContent: "center", transition: "color 0.18s" },
   cardTitle: { fontSize: "24px", fontWeight: "400", color: "inherit", letterSpacing: "-0.2px" },

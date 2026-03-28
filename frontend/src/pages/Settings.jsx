@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useInputControl } from "./InputControlContext";
+import { getClosedMs, saveSettings } from "../utils/settings";
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -8,10 +9,13 @@ export default function Settings() {
     mode, enabled, register, unregister,
     holdDuration, setHoldDuration,
     sensorSettings, updateSensorSettings,
-    recenterEyes, setYBias, eyeCentered,
+    eyeReady, eyeCentered,
+    recenterEyes, setYBias,
+    cnnReady, gazeLabel,
   } = useInputControl();
 
   const [localYBias, setLocalYBias] = useState(0);
+  const [closedMs,   setClosedMs]   = useState(() => getClosedMs());
 
   useEffect(() => {
     register((cmd) => {
@@ -116,7 +120,7 @@ export default function Settings() {
           </>
         )}
 
-        {/* ── Eye mode: Y-bias + re-center ── */}
+        {/* ── Eyes mode (MediaPipe, webcam) ── */}
         {mode === "eyes" && (
           <section style={s.section}>
             <div style={s.sectionHeader}>
@@ -124,12 +128,12 @@ export default function Settings() {
               <div>
                 <p style={s.sectionTitle}>Eye Tracking</p>
                 <p style={s.sectionSub}>
-                  {eyeCentered ? "Centered and tracking" : "Waiting for auto-center…"}
+                  {eyeCentered ? "Centred and tracking" : eyeReady ? "Centering…" : "Initialising camera…"}
                 </p>
               </div>
             </div>
 
-            <SliderRow label="Y-axis bias" hint="If stuck on DOWN, drag left. If stuck on UP, drag right."
+            <SliderRow label="Y-axis bias" hint="If stuck on DOWN drag left · if stuck on UP drag right"
               value={localYBias} display={localYBias.toFixed(2)}
               min={-2.0} max={2.0} step={0.05} accent="#22c55e"
               onChange={v => { setLocalYBias(v); setYBias(v); }} />
@@ -140,11 +144,69 @@ export default function Settings() {
               onMouseEnter={e => e.currentTarget.style.background = "rgba(34,197,94,0.12)"}
               onMouseLeave={e => e.currentTarget.style.background = "transparent"}
               onClick={recenterEyes}>
-              Re-center eye tracking
+              Re-centre eye tracking
             </button>
 
             <p style={{ fontSize: 12, color: "rgba(255,255,255,0.22)", margin: 0 }}>
-              Hold your gaze RIGHT for ~1.5s to confirm / select. UP/DOWN navigate, LEFT goes back.
+              Hold gaze RIGHT for ~1.5 s to confirm · UP/DOWN navigate · LEFT goes back
+            </p>
+          </section>
+        )}
+
+        {/* ── CNN mode (Pi camera + PyTorch model) ── */}
+        {mode === "cnn" && (
+          <section style={s.section}>
+            <div style={s.sectionHeader}>
+              <span style={s.sectionIcon}>🧠</span>
+              <div>
+                <p style={s.sectionTitle}>CNN Eye Tracking</p>
+                <p style={s.sectionSub}>
+                  {cnnReady ? "Connected to nn_server.py" : "Waiting for nn_server.py on :5001…"}
+                </p>
+              </div>
+            </div>
+
+            {/* camera preview */}
+            <img
+              src="http://localhost:8000/camera/stream"
+              alt="Pi camera"
+              style={{
+                width: "100%", borderRadius: 12, border: "1px solid rgba(255,255,255,0.08)",
+                background: "#000", aspectRatio: "4/3", objectFit: "cover",
+                display: cnnReady ? "block" : "none",
+              }}
+            />
+            {!cnnReady && (
+              <div style={{ textAlign: "center", color: "rgba(255,255,255,0.2)", fontSize: 13, padding: "20px 0" }}>
+                Camera preview will appear once connected
+              </div>
+            )}
+
+            {/* live gaze badge */}
+            <div style={s.gazeRow}>
+              <span style={s.gazeLabel}>Current gaze</span>
+              <span style={{
+                ...s.gazeBadge,
+                background:  cnnReady ? "rgba(34,197,94,0.12)" : "rgba(255,255,255,0.04)",
+                color:       cnnReady ? "#86efac"              : "rgba(255,255,255,0.25)",
+                borderColor: cnnReady ? "rgba(34,197,94,0.3)"  : "rgba(255,255,255,0.08)",
+              }}>
+                {cnnReady ? gazeLabel : "—"}
+              </span>
+            </div>
+
+            <Divider />
+
+            <SliderRow
+              label="Close-eyes select duration"
+              hint="How long to keep eyes CLOSED to confirm a selection"
+              value={closedMs} display={`${closedMs} ms`}
+              min={500} max={3000} step={100} accent="#22c55e"
+              onChange={v => { setClosedMs(v); saveSettings({ closedMs: v }); }}
+            />
+
+            <p style={{ fontSize: 12, color: "rgba(255,255,255,0.22)", margin: 0 }}>
+              UP/DOWN/LEFT/RIGHT navigate · CLOSE eyes for the duration above to confirm
             </p>
           </section>
         )}
@@ -242,6 +304,15 @@ const s = {
     border: "1px solid rgba(34,197,94,0.3)", color: "#86efac",
     fontSize: "14px", fontWeight: "500", cursor: "pointer", transition: "background 0.15s",
     textAlign: "center",
+  },
+  gazeRow: {
+    display: "flex", alignItems: "center", justifyContent: "space-between",
+  },
+  gazeLabel: { fontSize: "13px", fontWeight: "500", color: "rgba(255,255,255,0.65)" },
+  gazeBadge: {
+    padding: "4px 14px", borderRadius: 99,
+    border: "1px solid", fontSize: "13px", fontWeight: "600",
+    letterSpacing: "0.08em", transition: "all 0.2s",
   },
   legend: {
     position: "fixed", bottom: 28, left: 0, right: 0, textAlign: "center",

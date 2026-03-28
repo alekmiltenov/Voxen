@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \":*)",
+      "Bash(pip show:*)",
+      "Bash(python -c \"from better_profanity import profanity; print\\(profanity.contains_profanity\\(''dick''\\)\\)\")",
+      "Bash(grep -r \"save\\\\|load\\\\|cache\\\\|pickle\\\\|json\\\\.dump\\\\|model\\\\.\" /c/Users/alekm/Voxen/Suggestion-System/ /c/Users/alekm/Voxen/Action_Space/ --include=*.py)",
+      "Bash(npm install:*)",
+      "Bash(node -e \"const p = require\\(''./node_modules/webgazer/package.json''\\); console.log\\(p.version, p.main, p.module\\)\")",
+      "Bash(node -e \"console.log\\(require\\(''./node_modules/webgazer/package.json''\\).version\\)\")",
+      "Bash(grep -E \"\\\\.\\(wasm|data|js\\)$\")"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\alekm\\Voxen\\frontend\\node_modules\\webgazer\\dist\\mediapipe\\face_mesh"
+    ]
+  }
+}

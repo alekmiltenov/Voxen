@@ -3,6 +3,9 @@ import os
 import json
 import asyncio
 import math
+import threading
+import cv2
+import numpy as np
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -19,6 +22,7 @@ sys.path.insert(0, _ROOT)
 sys.path.insert(0, os.path.join(_ROOT, "Suggestion-System"))
 sys.path.insert(0, os.path.join(_ROOT, "Action_Space", "actions"))
 sys.path.insert(0, os.path.join(_ROOT, "Action_Space"))
+sys.path.insert(0, os.path.join(_ROOT, "eye_tracking"))
 
 from Suggestion_System import get_next_word_candidates
 import re
@@ -132,8 +136,77 @@ def _merge(model_candidates: list, context_words: list[str], top_k: int) -> list
 
     return sorted(merged.values(), key=lambda x: x[1], reverse=True)[:top_k]
 
+# ── CNN eye tracking ──────────────────────────────────────────────────────────
+_cnn_lock       = threading.Lock()
+_cnn_prediction = {"label": 0, "name": "NONE", "confidence": 0.0, "ready": False}
+_latest_frame   = None
+_ws_loop        = None
+_ws_clients: set = set()   # asyncio.Queue per connected /ws/predict client
+
+def _push_prediction(pred: dict):
+    """Push latest prediction to all connected WebSocket clients (thread-safe)."""
+    if _ws_loop is None:
+        return
+    for q in list(_ws_clients):
+        try:
+            _ws_loop.call_soon_threadsafe(q.put_nowait, pred)
+        except Exception:
+            pass
+
+def _cnn_inference_loop():
+    global _latest_frame
+    try:
+        import torch
+        from eye_tracking import EyeTrackCNN, LABELS, IMG_H, IMG_W
+        from stream_client import frames
+
+        model_path = os.path.join(_ROOT, "eye_tracking", "model.pt")
+        if not os.path.exists(model_path):
+            print("[CNN] model.pt not found — run train.py first")
+            return
+
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        model  = EyeTrackCNN().to(device)
+        model.load_state_dict(torch.load(model_path, map_location=device))
+        model.eval()
+        print(f"[CNN] model loaded ({device}), connecting to Pi stream…")
+
+        for bgr in frames():
+            _, jpg = cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, 60])
+            _latest_frame = jpg.tobytes()
+
+            gray   = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+            gray64 = cv2.resize(gray, (IMG_W, IMG_H))
+            t = (torch.tensor(gray64 / 255.0, dtype=torch.float32)
+                      .unsqueeze(0).unsqueeze(0).to(device))
+            with torch.no_grad():
+                probs = model(t)[0]
+            idx  = probs.argmax().item()
+            pred = {
+                "label":      idx + 1,
+                "name":       LABELS[idx + 1],
+                "confidence": round(probs[idx].item(), 4),
+                "ready":      True,
+            }
+            with _cnn_lock:
+                _cnn_prediction.update(pred)
+            _push_prediction(pred)
+
+    except Exception as e:
+        print(f"[CNN] inference thread error: {e}")
+
+threading.Thread(target=_cnn_inference_loop, daemon=True).start()
+
 # ── App ───────────────────────────────────────────────────────────────────────
-app = FastAPI(title="Voxen AAC Server")
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app):
+    global _ws_loop
+    _ws_loop = asyncio.get_event_loop()
+    yield
+
+app = FastAPI(title="Voxen AAC Server", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -145,6 +218,39 @@ app.add_middleware(
 
 # ── Vocab: starters ───────────────────────────────────────────────────────────
 _DEFAULTS = ["I", "I need", "I want", "Help", "Yes", "No", "Please", "Thank you"]
+
+@app.get("/predict")
+def get_prediction():
+    with _cnn_lock:
+        return dict(_cnn_prediction)
+
+@app.websocket("/ws/predict")
+async def predict_ws(websocket: WebSocket):
+    await websocket.accept()
+    q: asyncio.Queue = asyncio.Queue(maxsize=2)
+    _ws_clients.add(q)
+    try:
+        while True:
+            pred = await q.get()
+            await websocket.send_json(pred)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        _ws_clients.discard(q)
+
+@app.get("/camera/stream")
+async def camera_stream():
+    from fastapi.responses import StreamingResponse
+    import asyncio
+
+    async def gen():
+        while True:
+            frame = _latest_frame
+            if frame:
+                yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame + b"\r\n")
+            await asyncio.sleep(0.05)   # ~20 fps
+
+    return StreamingResponse(gen(), media_type="multipart/x-mixed-replace; boundary=frame")
 
 @app.get("/vocab/starters")
 def get_starters(limit: int = 8):

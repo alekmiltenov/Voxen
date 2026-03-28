@@ -17,8 +17,6 @@ const SLOT_STYLE = {
    "2": { opacity: 0.15, fontSize: "34px", fontWeight: 300 },
 };
 
-const SPEAK_SENTINEL = "__SPEAK__";
-const KEYBOARD_SENTINEL = "__KEYBOARD__";
 
 export default function Communicate() {
   const navigate = useNavigate();
@@ -30,6 +28,7 @@ export default function Communicate() {
   const [suggestions, setSuggestions] = useState([]);
   const [selIdx,      setSelIdx]      = useState(0);
   const [speaking,    setSpeaking]    = useState(false);
+  const [menuOpen,    setMenuOpen]    = useState(false);
   const wsRef = useRef(null);
 
   const selRef         = useRef(0);
@@ -50,9 +49,7 @@ export default function Communicate() {
   const pageMode = words.length === 0 ? "starters" : "drum";
 
   // ── Build drum items: inject "🔊 Speak" and "⌨️ Keyboard" at the top ──
-  const drumItems = pageMode === "drum"
-    ? [SPEAK_SENTINEL, KEYBOARD_SENTINEL, ...suggestions]
-    : [];
+  const drumItems = pageMode === "drum" ? suggestions : [];
   const drumItemsRef = useRef(drumItems);
   useEffect(() => { drumItemsRef.current = drumItems; }, [drumItems]);
 
@@ -73,9 +70,8 @@ export default function Communicate() {
     ws.onmessage = e => {
       const d = JSON.parse(e.data);
       if (d.suggestions) {
-        const list = d.suggestions.map(s => s.word ?? s);
-        setSuggestions(list);
-        setSel(2); // start on first real suggestion (index 2, since 0=Speak, 1=Keyboard)
+        setSuggestions(d.suggestions.map(s => s.word ?? s));
+        setSel(0);
       }
     };
     return () => ws.close();
@@ -101,11 +97,7 @@ export default function Communicate() {
     const items = drumItemsRef.current;
     if (!items.length) return;
     const item = items[selRef.current];
-    if (item === SPEAK_SENTINEL) {
-      speak();
-    } else if (item === KEYBOARD_SENTINEL) {
-      navigate("/keyboard", { state: { words: wordsRef.current } });
-    } else if (item) {
+    if (item) {
       setWords(prev => [...prev, item.trim()]);
       setSel(2);
     }
@@ -185,9 +177,7 @@ export default function Communicate() {
   if (n > 0) {
     [-2, -1, 0, 1, 2].forEach(slot => {
       const item = drumItems[wrap(selIdx + slot, n)];
-      if (item === SPEAK_SENTINEL) slotWords[slot] = "🔊 Speak";
-      else if (item === KEYBOARD_SENTINEL) slotWords[slot] = "⌨️ Keyboard";
-      else slotWords[slot] = item ?? "";
+      slotWords[slot] = item ?? "";
     });
   }
 
@@ -245,11 +235,11 @@ export default function Communicate() {
   return (
     <div style={s.page}>
 
-      {/* LEFT side button */}
-      <button style={s.sideBtn} onClick={backspace}
+      {/* LEFT side button — ⋯ menu */}
+      <button style={s.sideBtn} onClick={() => setMenuOpen(o => !o)}
         onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.1)"}
         onMouseLeave={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}>
-        {isEyes ? "←" : (enabled ? "BACK" : "Back")}
+        ⋯
       </button>
 
       <div style={s.main}>
@@ -257,20 +247,6 @@ export default function Communicate() {
         {/* sentence panel */}
         <div style={s.sentencePanel}>
           <p style={s.sentenceText}>{words.join(" ")}</p>
-          <div style={s.controls}>
-            <button style={s.ctrlBtn} onClick={backspace}>⌫</button>
-            <button style={s.ctrlBtn} onClick={clear}>clear</button>
-            <button
-              style={{ ...s.ctrlBtn, ...(speaking ? s.ctrlActive : {}) }}
-              onClick={speak}
-              disabled={speaking}>
-              {speaking ? "speaking…" : "speak"}
-            </button>
-            <button style={s.ctrlBtn}
-              onClick={() => navigate("/keyboard", { state: { words } })}>
-              keyboard
-            </button>
-          </div>
 
           {enabled && (
             <div style={s.drumLegend}>
@@ -307,9 +283,7 @@ export default function Communicate() {
             {[-2, -1, 0, 1, 2].map(slot => {
               const word = slotWords[slot] ?? "";
               const ds = SLOT_STYLE[String(slot)];
-              const isSpeakItem = drumItems[wrap(selIdx + slot, n)] === SPEAK_SENTINEL;
-              const isKeyboardItem = drumItems[wrap(selIdx + slot, n)] === KEYBOARD_SENTINEL;
-              const isSpecial = isSpeakItem || isKeyboardItem;
+              const isSpecial = false;
               return (
                 <div key={slot} style={{
                   ...s.drumWord,
@@ -334,6 +308,37 @@ export default function Communicate() {
           </button>
         </div>
       </div>
+
+      {/* ⋯ menu overlay */}
+      {menuOpen && (
+        <div style={s.menuOverlay} onClick={() => setMenuOpen(false)}>
+          <div style={s.menuGrid} onClick={e => e.stopPropagation()}>
+            {/* top — last word */}
+            <div style={s.menuCell} />
+            <div style={s.menuCell}>
+              <button style={s.menuBtn} onClick={() => { backspace(); setMenuOpen(false); }}>⌫ Last word</button>
+            </div>
+            <div style={s.menuCell} />
+            {/* middle — close / speak */}
+            <div style={s.menuCell}>
+              <button style={s.menuBtn} onClick={() => setMenuOpen(false)}>✕</button>
+            </div>
+            <div style={s.menuCell} />
+            <div style={s.menuCell}>
+              <button style={{ ...s.menuBtn, color: speaking ? "#86efac" : undefined }}
+                onClick={() => { speak(); setMenuOpen(false); }}>
+                {speaking ? "speaking…" : "🔊 Speak"}
+              </button>
+            </div>
+            {/* bottom — clear all */}
+            <div style={s.menuCell} />
+            <div style={s.menuCell}>
+              <button style={s.menuBtn} onClick={() => { clear(); setMenuOpen(false); }}>Clear all</button>
+            </div>
+            <div style={s.menuCell} />
+          </div>
+        </div>
+      )}
 
       {/* RIGHT side button */}
       <button style={s.sideBtn} onClick={confirmDrumItem}
@@ -404,12 +409,26 @@ const s = {
     letterSpacing: "-0.5px", lineHeight: "1.25", wordBreak: "break-word",
   },
   controls: { display: "flex", gap: "10px", marginTop: "24px", flexWrap: "wrap" },
-  ctrlBtn: {
-    padding: "7px 18px", borderRadius: "18px", background: "transparent",
-    border: "1px solid rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.38)",
-    fontSize: "13px", cursor: "pointer",
+  dotsBtn: {
+    marginTop: "20px", padding: "6px 18px", borderRadius: "18px",
+    background: "transparent", border: "1px solid rgba(255,255,255,0.12)",
+    color: "rgba(255,255,255,0.4)", fontSize: "20px", cursor: "pointer", letterSpacing: "2px",
   },
-  ctrlActive: { borderColor: "rgba(255,255,255,0.35)", color: "rgba(255,255,255,0.7)" },
+  menuOverlay: {
+    position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)",
+    display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100,
+  },
+  menuGrid: {
+    display: "grid", gridTemplateColumns: "1fr auto 1fr",
+    gridTemplateRows: "1fr auto 1fr", gap: "32px",
+    width: "min(600px, 85vw)", height: "min(440px, 75vh)",
+  },
+  menuCell: { display: "flex", alignItems: "center", justifyContent: "center" },
+  menuBtn: {
+    padding: "18px 32px", borderRadius: "18px", background: "rgba(255,255,255,0.06)",
+    border: "1px solid rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.85)",
+    fontSize: "18px", fontWeight: "400", cursor: "pointer", whiteSpace: "nowrap",
+  },
   drumLegend: { display: "flex", flexDirection: "column", gap: 4, marginTop: 28 },
   drumPanel: {
     flex: "1", display: "flex", flexDirection: "column", alignItems: "center",
