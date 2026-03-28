@@ -11,3 +11,4 @@ twilio
 openai
 groq
 better-profanity
+@mediapipe/tasks-vision
