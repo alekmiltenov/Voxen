@@ -22,11 +22,13 @@ export default function Keyboard() {
 
   useEffect(() => {
     register((cmd) => {
+      // CNN mode: keyboard is mouse-only, ignore all direction commands
+      if (mode === "cnn") return;
       if (cmd === "BACK" || cmd === "LEFT")
         navigate(returnTo, { state: { words: incomingWords, ...extraState } });
     });
     return () => unregister();
-  }, []);
+  }, [mode]);
 
   function pressKey(key) {
     if (key === "⌫") setText(t => t.slice(0, -1));

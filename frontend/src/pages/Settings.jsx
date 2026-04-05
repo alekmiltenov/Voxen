@@ -19,10 +19,11 @@ export default function Settings() {
 
   useEffect(() => {
     register((cmd) => {
-      if (cmd === "BACK" || cmd === "LEFT") navigate("/");
+      if (cmd === "BACK") navigate("/");
+      if (cmd === "LEFT" && mode !== "cnn") navigate("/");
     });
     return () => unregister();
-  }, []);
+  }, [mode]);
 
   const handleSensor = (key, value) =>
     updateSensorSettings({ ...sensorSettings, [key]: value });
@@ -253,8 +254,9 @@ function Divider() {
 
 const s = {
   page: {
-    width: "100vw", minHeight: "100vh", background: "#111111",
-    display: "flex", flexDirection: "column", padding: "28px 32px 60px", gap: "28px", boxSizing: "border-box",
+    width: "100vw", height: "100vh", background: "#111111",
+    display: "flex", flexDirection: "column", padding: "28px 32px 60px", gap: "28px",
+    boxSizing: "border-box", overflowY: "auto",
   },
   header: { display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 },
   backBtn: {

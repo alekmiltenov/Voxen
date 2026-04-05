@@ -10,7 +10,6 @@ def send_sms(to_phone: str, message: str):
     account_sid          = os.getenv("ACCOUNT_SID")
     auth_token           = os.getenv("AUTH_TOKEN")
     messaging_service_sid = os.getenv("MESSAGING_SERVICE_SID")
-
     if not all([account_sid, auth_token, messaging_service_sid]):
         return {
             "success": False,

@@ -5,7 +5,7 @@ from Action_Space.sms import send_sms
 def emergency_alert(payload=None):
     payload = payload or {}
 
-    phone = payload.get("phone", "+359883333419") # test number, needs to be connected with frontend
+    phone = payload.get("phone", "+359877117665") # test number, needs to be connected with frontend
 
     message = payload.get(
         "message",

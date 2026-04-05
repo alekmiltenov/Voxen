@@ -67,6 +67,11 @@ export default function Communicate() {
   useEffect(() => {
     const ws = createSuggestSocket();
     wsRef.current = ws;
+    ws.onopen = () => {
+      if (wordsRef.current.length > 0) {
+        ws.send(JSON.stringify({ text: wordsRef.current.join(" "), words: wordsRef.current, top_k: 8 }));
+      }
+    };
     ws.onmessage = e => {
       const d = JSON.parse(e.data);
       if (d.suggestions) {
@@ -133,17 +138,19 @@ export default function Communicate() {
 
       if (m === "starters") {
         const n = startersRef.current.length;
-        const cols = 4; // grid columns
 
         if (mode === "head") {
-          // head: LEFT/RIGHT cycle through items, FORWARD selects
           if (cmd === "LEFT")    setSel(wrap(selRef.current - 1, n));
           if (cmd === "RIGHT")   setSel(wrap(selRef.current + 1, n));
           if (cmd === "FORWARD") selectStarter(startersRef.current[selRef.current]);
           if (cmd === "BACK")    navigate("/");
+        } else if (mode === "cnn") {
+          if (cmd === "UP")      setSel(wrap(selRef.current - 1, n));
+          if (cmd === "DOWN")    setSel(wrap(selRef.current + 1, n));
+          if (cmd === "LEFT")    setSel(wrap(selRef.current - 1, n));
+          if (cmd === "RIGHT")   setSel(wrap(selRef.current + 1, n));
+          if (cmd === "FORWARD") selectStarter(startersRef.current[selRef.current]);
         } else {
-          // eyes: UP = prev item (visually left), DOWN = next item (visually right)
-          // LEFT = go back to home, hold RIGHT (FORWARD) = select
           if (cmd === "UP")      setSel(wrap(selRef.current - 1, n));
           if (cmd === "DOWN")    setSel(wrap(selRef.current + 1, n));
           if (cmd === "FORWARD") selectStarter(startersRef.current[selRef.current]);
@@ -151,7 +158,6 @@ export default function Communicate() {
         }
 
       } else {
-        // drum mode
         const n = drumItemsRef.current.length;
 
         if (mode === "head") {
@@ -159,8 +165,13 @@ export default function Communicate() {
           if (cmd === "RIGHT")   setSel(wrap(selRef.current + 1, n));
           if (cmd === "FORWARD") confirmDrumItem();
           if (cmd === "BACK")    backspace();
+        } else if (mode === "cnn") {
+          if (cmd === "UP")      setSel(wrap(selRef.current - 1, n));
+          if (cmd === "DOWN")    setSel(wrap(selRef.current + 1, n));
+          if (cmd === "LEFT")    setSel(wrap(selRef.current - 1, n));
+          if (cmd === "RIGHT")   setSel(wrap(selRef.current + 1, n));
+          if (cmd === "FORWARD") confirmDrumItem();
         } else {
-          // eyes: UP/DOWN scroll drum, hold RIGHT (FORWARD) confirms, LEFT deletes
           if (cmd === "UP")      setSel(wrap(selRef.current - 1, n));
           if (cmd === "DOWN")    setSel(wrap(selRef.current + 1, n));
           if (cmd === "FORWARD") confirmDrumItem();
@@ -312,30 +323,23 @@ export default function Communicate() {
       {/* ⋯ menu overlay */}
       {menuOpen && (
         <div style={s.menuOverlay} onClick={() => setMenuOpen(false)}>
-          <div style={s.menuGrid} onClick={e => e.stopPropagation()}>
-            {/* top — last word */}
-            <div style={s.menuCell} />
-            <div style={s.menuCell}>
-              <button style={s.menuBtn} onClick={() => { backspace(); setMenuOpen(false); }}>⌫ Last word</button>
-            </div>
-            <div style={s.menuCell} />
-            {/* middle — close / speak */}
-            <div style={s.menuCell}>
-              <button style={s.menuBtn} onClick={() => setMenuOpen(false)}>✕</button>
-            </div>
-            <div style={s.menuCell} />
-            <div style={s.menuCell}>
-              <button style={{ ...s.menuBtn, color: speaking ? "#86efac" : undefined }}
-                onClick={() => { speak(); setMenuOpen(false); }}>
-                {speaking ? "speaking…" : "🔊 Speak"}
-              </button>
-            </div>
-            {/* bottom — clear all */}
-            <div style={s.menuCell} />
-            <div style={s.menuCell}>
-              <button style={s.menuBtn} onClick={() => { clear(); setMenuOpen(false); }}>Clear all</button>
-            </div>
-            <div style={s.menuCell} />
+          <div style={s.menuBox} onClick={e => e.stopPropagation()}>
+            <button style={s.menuBtn} onClick={() => { speak(); setMenuOpen(false); }}>
+              {speaking ? "speaking…" : "🔊 Speak"}
+            </button>
+            <button style={s.menuBtn} onClick={() => { backspace(); setMenuOpen(false); }}>
+              ⌫ Last word
+            </button>
+            <button style={s.menuBtn} onClick={() => { setMenuOpen(false); navigate("/keyboard", { state: { words } }); }}>
+              ⌨️ Keyboard
+            </button>
+            <button style={s.menuBtn} onClick={() => { clear(); setMenuOpen(false); }}>
+              Clear all
+            </button>
+            <button style={{ ...s.menuBtn, color: "rgba(255,255,255,0.35)", fontSize: 13 }}
+              onClick={() => setMenuOpen(false)}>
+              Cancel
+            </button>
           </div>
         </div>
       )}
@@ -415,19 +419,17 @@ const s = {
     color: "rgba(255,255,255,0.4)", fontSize: "20px", cursor: "pointer", letterSpacing: "2px",
   },
   menuOverlay: {
-    position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)",
+    position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)",
     display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100,
   },
-  menuGrid: {
-    display: "grid", gridTemplateColumns: "1fr auto 1fr",
-    gridTemplateRows: "1fr auto 1fr", gap: "32px",
-    width: "min(600px, 85vw)", height: "min(440px, 75vh)",
+  menuBox: {
+    display: "flex", flexDirection: "column", gap: 12,
+    width: "min(340px, 80vw)",
   },
-  menuCell: { display: "flex", alignItems: "center", justifyContent: "center" },
   menuBtn: {
-    padding: "18px 32px", borderRadius: "18px", background: "rgba(255,255,255,0.06)",
-    border: "1px solid rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.85)",
-    fontSize: "18px", fontWeight: "400", cursor: "pointer", whiteSpace: "nowrap",
+    padding: "20px 28px", borderRadius: "18px", background: "rgba(255,255,255,0.07)",
+    border: "1px solid rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.9)",
+    fontSize: "18px", fontWeight: "400", cursor: "pointer", textAlign: "left",
   },
   drumLegend: { display: "flex", flexDirection: "column", gap: 4, marginTop: 28 },
   drumPanel: {

@@ -4,7 +4,7 @@ import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 import { getClosedMs } from "../utils/settings";
 
 // ── Server addresses ──────────────────────────────────────────────────────────
-const HEAD_SERVER = "http://10.237.97.128:5000";
+const HEAD_SERVER = "http://10.237.97.5:5000";
 const NN_SERVER   = "http://localhost:8000";
 
 // ── MediaPipe constants ───────────────────────────────────────────────────────
@@ -13,11 +13,11 @@ const AUTO_CENTER_FRAMES = 90;
 const DWELL_CONFIRM_MS   = 1500;
 
 // ── Shared timing constants ───────────────────────────────────────────────────
-const AUTO_REPEAT_MS  = 1200;  // repeat while holding direction
+const AUTO_REPEAT_MS  = 600;
 
 // ── CNN constants ─────────────────────────────────────────────────────────────
-const CONF_THRESHOLD = 0.65;   // higher = less noise
-const DEBOUNCE_MS    = 500;    // direction must hold for 500 ms before firing
+const CONF_THRESHOLD = 0.55;
+const DEBOUNCE_MS    = 80;
 
 // ── Context ───────────────────────────────────────────────────────────────────
 const InputControlContext = createContext(null);
@@ -280,7 +280,6 @@ export function InputControlProvider({ children }) {
     let rawDir      = null;
     let rawStart    = 0;
     let stableDir   = null;
-    let lastRepeat  = 0;
     let closedStart = null;
     let closedFired = false;
 
@@ -292,31 +291,32 @@ export function InputControlProvider({ children }) {
       const now = Date.now();
       const dir = data.confidence >= CONF_THRESHOLD ? data.name : null;
 
-      if (dir !== rawDir) {
-        rawDir   = dir;
-        rawStart = now;
-        if (dir !== "CLOSED") { closedStart = null; closedFired = false; }
-      }
-
-      const isStable = dir !== null && (now - rawStart) >= DEBOUNCE_MS;
-      if (!isStable) { stableDir = null; return; }
-
+      // ── CLOSED: start timer immediately, no debounce needed ──────────────
       if (dir === "CLOSED") {
         if (!closedStart) closedStart = now;
         if (!closedFired && (now - closedStart) >= getClosedMs()) {
           console.log("[CNN] CLOSED held → dispatching FORWARD");
-          closedFired = true; dispatch("FORWARD");
+          closedFired = true;
+          dispatch("FORWARD");
         }
-        stableDir = null; return;
+        rawDir = null; stableDir = null;
+        return;
       }
 
       closedStart = null; closedFired = false;
+
+      // ── navigation directions: small debounce to filter jitter ────────────
+      if (dir !== rawDir) { rawDir = dir; rawStart = now; }
+
+      const isStable = dir !== null && (now - rawStart) >= DEBOUNCE_MS;
+      if (!isStable) { stableDir = null; return; }
+
       if (stableDir !== dir) {
         console.log(`[CNN] dispatch ${dir}  (conf=${data.confidence.toFixed(2)})`);
-        stableDir = dir; lastRepeat = now; dispatch(dir);
-      } else if (now - lastRepeat >= AUTO_REPEAT_MS) {
-        lastRepeat = now; dispatch(dir);
+        stableDir = dir;
+        dispatch(dir);
       }
+      // no auto-repeat — user must look away and back to fire again
     }
 
     let ws;

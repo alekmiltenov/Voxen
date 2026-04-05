@@ -24,6 +24,7 @@ export default function Actions() {
 
   const runAction = async (id) => {
     setStatus(null);
+    if (id === 3) { navigate("/ai-chat"); return; }
     if (id === 4) { navigate("/pain"); return; }
     try {
       const res = await apiPost("/actions/execute", { action: id });
