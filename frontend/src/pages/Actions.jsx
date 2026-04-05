@@ -6,7 +6,8 @@ import { useInputControl } from "./InputControlContext";
 const ACTIONS = [
   { id: 2, label: "Emergency", sub: "Immediate alert" },
   { id: 1, label: "Call caregiver", sub: "Start a call with your caregiver" },
-  { id: 3, label: "Food & water(Currently ai chat)", sub: "Choose what you'd like to drink or eat" },
+  //This button is styled as Food & Water but currently routes to AI Chat.
+  { id: 3, label: "Food & water (-> AI chat for now)", sub: "Choose what you'd like to drink or eat" },
   { id: 4, label: "Pain & comfort", sub: "Locate pain or comfort need" },
 ];
 
