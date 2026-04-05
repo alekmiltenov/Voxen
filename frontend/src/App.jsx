@@ -4,6 +4,7 @@ import Communicate from "./pages/Communicate";
 import Actions     from "./pages/Actions";
 import Keyboard    from "./pages/Keyboard";
 import AIChat      from "./pages/AIChat";
+import Pain        from "./pages/Pain";
 import CaretakerDashboard from "./pages/caretaker/CaretakerDashboard";
 import { InputControlProvider } from "./pages/InputControlContext";
 import Settings from "./pages/Settings";
@@ -16,6 +17,7 @@ function App() {
           <Route path="/"            element={<Home />} />
           <Route path="/communicate" element={<Communicate />} />
           <Route path="/actions"     element={<Actions />} />
+          <Route path="/pain"        element={<Pain />} />
           <Route path="/keyboard"    element={<Keyboard />} />
           <Route path="/ai-chat"     element={<AIChat />} />
           <Route path="/caretaker"   element={<CaretakerDashboard />} />
