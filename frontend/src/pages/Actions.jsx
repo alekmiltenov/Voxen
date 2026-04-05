@@ -172,7 +172,6 @@ export default function Actions() {
       <div style={s.header}>
         <button style={s.backBtn} onClick={() => navigate("/")}>← Back</button>
         <span style={s.title}>Actions</span>
-        <div style={{ width: 80 }} />
       </div>
 
       {status && (
@@ -234,13 +233,24 @@ export default function Actions() {
 const s = {
   page: {
     width: "100vw", height: "100vh", background: "#111111",
-    display: "flex", flexDirection: "column", padding: "28px 32px", gap: "28px",
+    display: "flex", flexDirection: "column", padding: "28px 32px", gap: "21px",
   },
-  header: { display: "flex", justifyContent: "space-between", alignItems: "center" },
+  header: {
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    position: "relative",
+    minHeight: "34px",
+  },
   backBtn: {
+    position: "absolute",
+    top: "50%",
+    left: 0,
+    transform: "translateY(-50%)",
     padding: "8px 18px", borderRadius: "20px", background: "transparent",
-    border: "1px solid rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.4)",
-    fontSize: "28px", cursor: "pointer", width: 130,
+    border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.35)",
+    fontSize: "13px", cursor: "pointer",
+    zIndex: 2,
   },
   title: {
     fontSize: "18px", fontWeight: "300", color: "rgba(255,255,255,0.5)",
