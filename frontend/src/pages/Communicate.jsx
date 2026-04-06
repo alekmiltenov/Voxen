@@ -28,7 +28,7 @@ export default function Communicate() {
   const [suggestions, setSuggestions] = useState([]);
   const [selIdx,      setSelIdx]      = useState(0);
   const [speaking,    setSpeaking]    = useState(false);
-  const [menuOpen,    setMenuOpen]    = useState(false);
+  const [panelFocus,  setPanelFocus]  = useState("left"); // "left" or "right"
   const wsRef = useRef(null);
 
   const selRef         = useRef(0);
@@ -36,8 +36,10 @@ export default function Communicate() {
   const suggestionsRef = useRef([]);
   const startersRef    = useRef(DEFAULT_STARTERS);
   const modePageRef    = useRef("starters");
+  const panelFocusRef  = useRef("left");
 
   const setSel = (v) => { selRef.current = v; setSelIdx(v); };
+  const setPanelFocusVal = (v) => { panelFocusRef.current = v; setPanelFocus(v); };
 
   useEffect(() => { wordsRef.current       = words;       }, [words]);
   useEffect(() => { suggestionsRef.current = suggestions; }, [suggestions]);
@@ -68,9 +70,7 @@ export default function Communicate() {
     const ws = createSuggestSocket();
     wsRef.current = ws;
     ws.onopen = () => {
-      if (wordsRef.current.length > 0) {
-        ws.send(JSON.stringify({ text: wordsRef.current.join(" "), words: wordsRef.current, top_k: 8 }));
-      }
+      // Don't send anything on initial connect - wait for words to be set
     };
     ws.onmessage = e => {
       const d = JSON.parse(e.data);
@@ -94,8 +94,12 @@ export default function Communicate() {
   const wrap = (i, n) => n === 0 ? 0 : ((i % n) + n) % n;
 
   function selectStarter(phrase) {
-    setWords(phrase.trim().split(/\s+/));
-    setSel(2);
+    const phraseWords = phrase.trim().split(/\s+/);
+    setWords(phraseWords);
+    wordsRef.current = phraseWords; // Update ref immediately
+    setSuggestions([]); // Clear old suggestions
+    setPanelFocusVal("left"); // Start on left panel
+    setSel(0); // Start on first command
   }
 
   function confirmDrumItem() {
@@ -132,55 +136,91 @@ export default function Communicate() {
   }
 
   // ── unified control handler ──────────────────────────────────────────────
+  // Starters page: 2D grid navigation (0-11 = grid, 12 = Keyboard, 13 = BACK)
   useEffect(() => {
     register((cmd) => {
       const m = modePageRef.current;
 
       if (m === "starters") {
-        const n = startersRef.current.length;
+        const gridSize = 4;
+        const gridItems = 12;
+        const totalItems = gridItems + 2;
+        let newSel = selRef.current;
 
         if (mode === "head") {
-          if (cmd === "LEFT")    setSel(wrap(selRef.current - 1, n));
-          if (cmd === "RIGHT")   setSel(wrap(selRef.current + 1, n));
-          if (cmd === "FORWARD") selectStarter(startersRef.current[selRef.current]);
+          if (cmd === "LEFT")    newSel = wrap(selRef.current - 1, totalItems);
+          if (cmd === "RIGHT")   newSel = wrap(selRef.current + 1, totalItems);
+          if (cmd === "UP")      newSel = Math.max(0, selRef.current - gridSize);
+          if (cmd === "DOWN")    newSel = Math.min(totalItems - 1, selRef.current + gridSize);
+          if (cmd === "FORWARD") {
+            if (selRef.current < gridItems) selectStarter(startersRef.current[selRef.current]);
+            else if (selRef.current === gridItems) navigate("/keyboard", { state: { words } });
+            else if (selRef.current === gridItems + 1) navigate("/");
+          }
           if (cmd === "BACK")    navigate("/");
         } else if (mode === "cnn") {
-          if (cmd === "UP")      setSel(wrap(selRef.current - 1, n));
-          if (cmd === "DOWN")    setSel(wrap(selRef.current + 1, n));
-          if (cmd === "LEFT")    setSel(wrap(selRef.current - 1, n));
-          if (cmd === "RIGHT")   setSel(wrap(selRef.current + 1, n));
-          if (cmd === "FORWARD") selectStarter(startersRef.current[selRef.current]);
+          if (cmd === "UP")      newSel = Math.max(0, selRef.current - gridSize);
+          if (cmd === "DOWN")    newSel = Math.min(totalItems - 1, selRef.current + gridSize);
+          if (cmd === "LEFT")    newSel = wrap(selRef.current - 1, totalItems);
+          if (cmd === "RIGHT")   newSel = wrap(selRef.current + 1, totalItems);
+          if (cmd === "FORWARD") {
+            if (selRef.current < gridItems) selectStarter(startersRef.current[selRef.current]);
+            else if (selRef.current === gridItems) navigate("/keyboard", { state: { words } });
+            else if (selRef.current === gridItems + 1) navigate("/");
+          }
         } else {
-          if (cmd === "UP")      setSel(wrap(selRef.current - 1, n));
-          if (cmd === "DOWN")    setSel(wrap(selRef.current + 1, n));
-          if (cmd === "FORWARD") selectStarter(startersRef.current[selRef.current]);
-          if (cmd === "LEFT")    navigate("/");
+          if (cmd === "UP")      newSel = Math.max(0, selRef.current - gridSize);
+          if (cmd === "DOWN")    newSel = Math.min(totalItems - 1, selRef.current + gridSize);
+          if (cmd === "LEFT")    newSel = wrap(selRef.current - 1, totalItems);
+          if (cmd === "RIGHT")   newSel = wrap(selRef.current + 1, totalItems);
+          if (cmd === "FORWARD") {
+            if (selRef.current < gridItems) selectStarter(startersRef.current[selRef.current]);
+            else if (selRef.current === gridItems) navigate("/keyboard", { state: { words } });
+            else if (selRef.current === gridItems + 1) navigate("/");
+          }
         }
+        setSel(newSel);
 
       } else {
-        const n = drumItemsRef.current.length;
+        // ── DRUM PAGE: Two-panel layout ──
+        // Left panel: 5 commands (Speak, Keyboard, Delete Last, Clear All, Switch)
+        // Right panel: suggestions carousel
+        const leftCommands = 5;
+        const rightCount = suggestionsRef.current.length || 0;
 
-        if (mode === "head") {
-          if (cmd === "LEFT")    setSel(wrap(selRef.current - 1, n));
-          if (cmd === "RIGHT")   setSel(wrap(selRef.current + 1, n));
-          if (cmd === "FORWARD") confirmDrumItem();
-          if (cmd === "BACK")    backspace();
-        } else if (mode === "cnn") {
-          if (cmd === "UP")      setSel(wrap(selRef.current - 1, n));
-          if (cmd === "DOWN")    setSel(wrap(selRef.current + 1, n));
-          if (cmd === "LEFT")    setSel(wrap(selRef.current - 1, n));
-          if (cmd === "RIGHT")   setSel(wrap(selRef.current + 1, n));
-          if (cmd === "FORWARD") confirmDrumItem();
+        if (panelFocusRef.current === "left") {
+          // LEFT PANEL NAVIGATION
+          if (cmd === "UP")      setSel(wrap(selRef.current - 1, leftCommands));
+          if (cmd === "DOWN")    setSel(wrap(selRef.current + 1, leftCommands));
+          if (cmd === "LEFT" || cmd === "RIGHT") {
+            // Switch to right panel
+            if (rightCount > 0) {
+              setPanelFocusVal("right");
+              setSel(0); // Start at first suggestion
+            }
+          }
+          if (cmd === "FORWARD") {
+            const actions = [speak, () => navigate("/keyboard", { state: { words: wordsRef.current } }), backspace, clear, () => setPanelFocusVal("right")];
+            actions[selRef.current]?.();
+            if (selRef.current === 4) setSel(0); // Switch button - select first suggestion
+          }
         } else {
-          if (cmd === "UP")      setSel(wrap(selRef.current - 1, n));
-          if (cmd === "DOWN")    setSel(wrap(selRef.current + 1, n));
-          if (cmd === "FORWARD") confirmDrumItem();
-          if (cmd === "LEFT")    backspace();
+          // RIGHT PANEL NAVIGATION (Suggestions)
+          if (cmd === "UP")      setSel(wrap(selRef.current - 1, rightCount));
+          if (cmd === "DOWN")    setSel(wrap(selRef.current + 1, rightCount));
+          if (cmd === "LEFT" || cmd === "RIGHT") {
+            // Switch back to left panel
+            setPanelFocusVal("left");
+            setSel(0); // Start at Speak button
+          }
+          if (cmd === "FORWARD") {
+            confirmDrumItem(); // Add selected suggestion
+          }
         }
       }
     });
     return () => unregister();
-  }, [mode]);
+  }, [mode, navigate, words]);
 
   // ── drum display helpers ─────────────────────────────────────────────────
   const n = drumItems.length;
@@ -195,26 +235,26 @@ export default function Communicate() {
   const isEyes = mode === "eyes";
 
   // ── STARTERS PAGE ────────────────────────────────────────────────────────
+  // Grid has 12 starters (indices 0-11) + Keyboard button (12) + BACK button (13)
   if (pageMode === "starters") {
+    const gridSize = 4;
+    const gridItems = 12;
     return (
       <div style={s.page}>
-        <div style={s.starterTop}>
-          <button style={s.pill} onClick={() => navigate("/")}>← Back</button>
-          <div style={{ width: 80 }} />
-        </div>
-
         <div style={s.starterBody}>
           <p style={s.starterHint}>
             {!enabled ? "Start with…"
-              : isEyes ? "Look UP to go back · DOWN to go forward · HOLD RIGHT to select"
-              : "Tilt LEFT / RIGHT to browse · FORWARD to select"}
+              : mode === "head" ? "🎮 HEAD: Use LEFT/RIGHT/UP/DOWN to browse · FORWARD to select · BACK to exit"
+              : mode === "eyes" ? "👁️ EYES: Use LEFT/RIGHT/UP/DOWN to browse · FORWARD to select"
+              : mode === "cnn" ? "🧠 CNN: Use LEFT/RIGHT/UP/DOWN to browse · FORWARD to select"
+              : "Select a starter…"}
           </p>
           <div style={s.starterGrid}>
             {starters.map((phrase, i) => {
               const isSelected = enabled && selIdx === i;
               return (
                 <button
-                  key={phrase}
+                  key={i}
                   style={{
                     ...s.starterBtn,
                     borderColor: isSelected ? "rgba(255,255,255,0.4)"  : "rgba(255,255,255,0.08)",
@@ -231,124 +271,140 @@ export default function Communicate() {
               );
             })}
           </div>
-          <button style={s.keyboardBtn}
-            onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.08)"}
-            onMouseLeave={e => e.currentTarget.style.background = "rgba(255,255,255,0.03)"}
-            onClick={() => navigate("/keyboard", { state: { words } })}>
-            Keyboard
-          </button>
+          <div style={s.starterButtonRow}>
+            <button
+              style={{
+                ...s.keyboardBtn,
+                borderColor: enabled && selIdx === gridItems ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.08)",
+                background:  enabled && selIdx === gridItems ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.03)",
+                color:       enabled && selIdx === gridItems ? "rgba(255,255,255,1)" : "rgba(255,255,255,0.85)",
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")}
+              onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.03)")}
+              onClick={() => navigate("/keyboard", { state: { words } })}
+            >
+              ⌨️ Keyboard
+            </button>
+            <button
+              style={{
+                ...s.keyboardBtn,
+                borderColor: enabled && selIdx === gridItems + 1 ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.08)",
+                background:  enabled && selIdx === gridItems + 1 ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.03)",
+                color:       enabled && selIdx === gridItems + 1 ? "rgba(255,255,255,1)" : "rgba(255,255,255,0.85)",
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")}
+              onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.03)")}
+              onClick={() => navigate("/")}
+            >
+              ← Back to Home
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
   // ── DRUM PAGE ────────────────────────────────────────────────────────────
+  // Menu bar items: accessible via UP/DOWN navigation
+  const menuItems = [
+    { label: "🔊 Speak", action: speak },
+    { label: "⌨️ Keyboard", action: () => navigate("/keyboard", { state: { words } }) },
+    { label: "⌫ Delete Last", action: backspace },
+    { label: "✕ Clear All", action: clear },
+  ];
+
+  // Navigation state: selIdx can be -1 to -4 (menu) or 0+ (drum items)
+  const isInMenu = selIdx < 0;
+  const menuIdx = isInMenu ? Math.abs(selIdx) - 1 : -1;
+  const itemIdx = !isInMenu ? selIdx : -1;
+
+  // Instructions
+  const getInstructions = () => {
+    if (mode === "head") {
+      return "🎮 HEAD: Tilt LEFT/RIGHT to browse · FORWARD to add · BACK to delete";
+    } else if (mode === "eyes") {
+      return "👁️ EYES: Look UP to menu · DOWN/LEFT/RIGHT to browse · Hold RIGHT ~1.5s to add";
+    } else if (mode === "cnn") {
+      return "🧠 CNN: Look UP to menu · DOWN/LEFT/RIGHT to browse · Close eyes 500ms to add";
+    }
+    return "Browse and add words · Click menu button for more options";
+  };
+
   return (
-    <div style={s.page}>
+    <div style={s.drumPageContainer}>
+      {/* SENTENCE PANEL — Top */}
+      <div style={s.drumSentencePanel}>
+        <p style={s.drumSentenceText}>{words.join(" ") || "(empty)"}</p>
+      </div>
 
-      {/* LEFT side button — ⋯ menu */}
-      <button style={s.sideBtn} onClick={() => setMenuOpen(o => !o)}
-        onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.1)"}
-        onMouseLeave={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}>
-        ⋯
-      </button>
-
-      <div style={s.main}>
-
-        {/* sentence panel */}
-        <div style={s.sentencePanel}>
-          <p style={s.sentenceText}>{words.join(" ")}</p>
-
-          {enabled && (
-            <div style={s.drumLegend}>
-              {isEyes ? (
-                <>
-                  <span style={drumLegendItem}>↑ UP · scroll up</span>
-                  <span style={drumLegendItem}>↓ DOWN · scroll down</span>
-                  <span style={drumLegendItem}>→ HOLD RIGHT · select word</span>
-                  <span style={drumLegendItem}>← LEFT · delete</span>
-                  <span style={drumLegendItem}>Scroll to 🔊 Speak or ⌨️ Keyboard</span>
-                </>
-              ) : (
-                <>
-                  <span style={drumLegendItem}>← scroll up</span>
-                  <span style={drumLegendItem}>→ scroll down</span>
-                  <span style={drumLegendItem}>FORWARD · add word</span>
-                  <span style={drumLegendItem}>BACK · delete</span>
-                </>
-              )}
-            </div>
-          )}
+      {/* TWO-PANEL LAYOUT */}
+      <div style={s.twoPanelWrapper}>
+        {/* LEFT PANEL — Commands */}
+        <div style={s.leftPanel}>
+          <p style={s.panelTitle}>Commands</p>
+          {[
+            { label: "🔊 Speak", action: speak },
+            { label: "⌨️ Keyboard", action: () => navigate("/keyboard", { state: { words: wordsRef.current } }) },
+            { label: "⌫ Delete Last", action: backspace },
+            { label: "🗑️ Clear All", action: clear },
+            { label: "→ Switch", action: () => {} },
+          ].map((item, i) => (
+            <button
+              key={i}
+              style={{
+                ...s.commandBtn,
+                background: panelFocus === "left" && selIdx === i ? "rgba(34,197,94,0.2)" : "rgba(255,255,255,0.05)",
+                borderColor: panelFocus === "left" && selIdx === i ? "rgba(34,197,94,0.4)" : "rgba(255,255,255,0.1)",
+                color: panelFocus === "left" && selIdx === i ? "#86efac" : "rgba(255,255,255,0.7)",
+                transform: panelFocus === "left" && selIdx === i ? "scale(1.05)" : "scale(1)",
+              }}
+              onClick={item.action}
+            >
+              {item.label}
+            </button>
+          ))}
         </div>
 
-        {/* drum */}
-        <div style={s.drumPanel}>
-          <button style={s.arrowBtn}
-            onClick={() => setSel(wrap(selIdx - 1, n))}
-            onMouseEnter={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.45)"}
-            onMouseLeave={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)"}>
-            ↑
-          </button>
-
-          <div style={s.drumWords}>
-            {[-2, -1, 0, 1, 2].map(slot => {
-              const word = slotWords[slot] ?? "";
-              const ds = SLOT_STYLE[String(slot)];
-              const isSpecial = false;
-              return (
-                <div key={slot} style={{
-                  ...s.drumWord,
-                  fontSize:   ds.fontSize,
-                  opacity:    word ? ds.opacity : 0,
-                  fontWeight: ds.fontWeight,
-                  color: slot === 0 && enabled
-                    ? (isSpecial ? "#86efac" : "#ffffff")
-                    : "rgba(255,255,255,0.9)",
-                }}>
+        {/* RIGHT PANEL — Suggestions */}
+        <div style={s.rightPanel}>
+          <p style={s.panelTitle}>Suggestions</p>
+          {suggestions.length > 0 ? (
+            <div style={s.suggestionsCarousel}>
+              {suggestions.map((word, i) => (
+                <button
+                  key={i}
+                  style={{
+                    ...s.suggestionItem,
+                    background: panelFocus === "right" && selIdx === i ? "rgba(34,197,94,0.2)" : "rgba(255,255,255,0.05)",
+                    borderColor: panelFocus === "right" && selIdx === i ? "rgba(34,197,94,0.4)" : "rgba(255,255,255,0.1)",
+                    color: panelFocus === "right" && selIdx === i ? "#86efac" : "rgba(255,255,255,0.7)",
+                    transform: panelFocus === "right" && selIdx === i ? "scale(1.08)" : "scale(1)",
+                  }}
+                  onClick={() => {
+                    setWords([...wordsRef.current, word]);
+                    setSel(0);
+                  }}
+                >
                   {word}
-                </div>
-              );
-            })}
-          </div>
-
-          <button style={s.arrowBtn}
-            onClick={() => setSel(wrap(selIdx + 1, n))}
-            onMouseEnter={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.45)"}
-            onMouseLeave={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)"}>
-            ↓
-          </button>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p style={s.noSuggestions}>No suggestions yet…</p>
+          )}
         </div>
       </div>
 
-      {/* ⋯ menu overlay */}
-      {menuOpen && (
-        <div style={s.menuOverlay} onClick={() => setMenuOpen(false)}>
-          <div style={s.menuBox} onClick={e => e.stopPropagation()}>
-            <button style={s.menuBtn} onClick={() => { speak(); setMenuOpen(false); }}>
-              {speaking ? "speaking…" : "🔊 Speak"}
-            </button>
-            <button style={s.menuBtn} onClick={() => { backspace(); setMenuOpen(false); }}>
-              ⌫ Last word
-            </button>
-            <button style={s.menuBtn} onClick={() => { setMenuOpen(false); navigate("/keyboard", { state: { words } }); }}>
-              ⌨️ Keyboard
-            </button>
-            <button style={s.menuBtn} onClick={() => { clear(); setMenuOpen(false); }}>
-              Clear all
-            </button>
-            <button style={{ ...s.menuBtn, color: "rgba(255,255,255,0.35)", fontSize: 13 }}
-              onClick={() => setMenuOpen(false)}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
+      {/* INSTRUCTIONS */}
+      <p style={s.drumInstructions}>
+        {panelFocus === "left" 
+          ? "🎮 Commands · UP/DOWN to navigate · LEFT/RIGHT to switch · FORWARD to select"
+          : "💡 Suggestions · UP/DOWN to browse · LEFT/RIGHT to switch · FORWARD to add"}
+      </p>
 
-      {/* RIGHT side button */}
-      <button style={s.sideBtn} onClick={confirmDrumItem}
-        onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.1)"}
-        onMouseLeave={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}>
-        {isEyes ? "→" : (enabled ? "FWD" : "OK")}
+      {/* BACK TO HOME */}
+      <button style={s.drumBackBtn} onClick={() => navigate("/")} title="Back to home">
+        ← Back
       </button>
     </div>
   );
@@ -372,6 +428,9 @@ const s = {
     width: "100%", display: "flex", flexDirection: "column",
     alignItems: "center", gap: "32px", paddingTop: "80px",
   },
+  starterButtonRow: {
+    display: "flex", gap: "20px", justifyContent: "center", marginTop: "24px",
+  },
   starterHint: {
     margin: 0, fontSize: "14px", color: "rgba(255,255,255,0.25)",
     letterSpacing: "0.08em", textTransform: "uppercase", textAlign: "center",
@@ -386,69 +445,116 @@ const s = {
     cursor: "pointer", transition: "all 0.15s ease", letterSpacing: "-0.2px",
   },
   keyboardBtn: {
-    padding: "28px 16px", borderRadius: "14px",
-    background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
-    color: "rgba(255,255,255,0.85)", fontSize: "24px", fontWeight: "400",
-    cursor: "pointer", transition: "background 0.15s",
-    width: "calc(50% + 7px)", margin: "24px auto 0",
+    padding: "28px 40px", borderRadius: "14px", border: "1px solid",
+    color: "rgba(255,255,255,0.85)", fontSize: "18px", fontWeight: "400",
+    cursor: "pointer", transition: "all 0.15s ease", letterSpacing: "-0.2px",
   },
   pill: {
     padding: "8px 18px", borderRadius: "20px", background: "transparent",
     border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.35)",
     fontSize: "13px", cursor: "pointer",
   },
-  sideBtn: {
-    flexShrink: 0, width: "74px", height: "74px", borderRadius: "50%",
-    background: "rgba(255,255,255,0.05)", border: "1.5px solid rgba(255,255,255,0.15)",
-    color: "rgba(255,255,255,0.7)", fontSize: "14px", fontWeight: 500,
-    cursor: "pointer", margin: "0 24px", transition: "background 0.15s",
+
+  // Drum Page Styles
+  drumPageContainer: {
+    position: "relative", width: "100vw", height: "100vh",
+    background: "#111111", display: "flex", flexDirection: "column",
+    padding: "28px 32px", boxSizing: "border-box", gap: "16px",
+    overflow: "hidden",
   },
-  main: { flex: 1, display: "flex", alignItems: "center", height: "100%" },
-  sentencePanel: {
-    flex: "0 0 50%", display: "flex", flexDirection: "column",
-    justifyContent: "center", paddingLeft: "16px", paddingRight: "32px", height: "100%",
+  drumMenuBar: {
+    display: "flex", gap: "12px", justifyContent: "center",
+    flexShrink: 0,
   },
-  sentenceText: {
-    fontSize: "50px", fontWeight: "300", color: "#ffffff", margin: 0,
-    letterSpacing: "-0.5px", lineHeight: "1.25", wordBreak: "break-word",
+  drumMenuBtn: {
+    padding: "12px 20px", borderRadius: "14px", border: "1px solid",
+    fontSize: "14px", fontWeight: "500", cursor: "pointer",
+    transition: "all 0.15s", letterSpacing: "0.05em", whiteSpace: "nowrap",
   },
-  controls: { display: "flex", gap: "10px", marginTop: "24px", flexWrap: "wrap" },
-  dotsBtn: {
-    marginTop: "20px", padding: "6px 18px", borderRadius: "18px",
-    background: "transparent", border: "1px solid rgba(255,255,255,0.12)",
-    color: "rgba(255,255,255,0.4)", fontSize: "20px", cursor: "pointer", letterSpacing: "2px",
+  drumInstructions: {
+    margin: 0, fontSize: "12px", color: "rgba(255,255,255,0.35)",
+    letterSpacing: "0.06em", textTransform: "uppercase", textAlign: "center",
+    flexShrink: 0,
   },
-  menuOverlay: {
-    position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)",
-    display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100,
+  drumSentencePanel: {
+    flex: "0 0 auto", padding: "20px 24px", borderRadius: "16px",
+    background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
+    minHeight: "80px", display: "flex", alignItems: "center", justifyContent: "center",
   },
-  menuBox: {
-    display: "flex", flexDirection: "column", gap: 12,
-    width: "min(340px, 80vw)",
+  drumSentenceText: {
+    margin: 0, fontSize: "28px", fontWeight: "300", color: "rgba(255,255,255,0.9)",
+    lineHeight: "1.4", letterSpacing: "-0.3px", textAlign: "center",
   },
-  menuBtn: {
-    padding: "20px 28px", borderRadius: "18px", background: "rgba(255,255,255,0.07)",
-    border: "1px solid rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.9)",
-    fontSize: "18px", fontWeight: "400", cursor: "pointer", textAlign: "left",
+  drumSelectorContainer: {
+    flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
+    justifyContent: "center", gap: "12px", minHeight: 0,
   },
-  drumLegend: { display: "flex", flexDirection: "column", gap: 4, marginTop: 28 },
-  drumPanel: {
-    flex: "1", display: "flex", flexDirection: "column", alignItems: "center",
-    justifyContent: "space-between", height: "100%", paddingTop: "40px", paddingBottom: "40px",
+  drumScrollHint: {
+    fontSize: "11px", color: "rgba(255,255,255,0.25)", letterSpacing: "0.06em",
+    textTransform: "uppercase",
   },
-  arrowBtn: {
-    width: "50px", height: "50px", borderRadius: "50%", background: "transparent",
-    border: "1.5px solid rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.45)",
-    fontSize: "17px", cursor: "pointer", transition: "border-color 0.15s",
-    display: "flex", alignItems: "center", justifyContent: "center",
-  },
-  drumWords: {
+  drumCarousel: {
     display: "flex", flexDirection: "column", alignItems: "center",
-    justifyContent: "center", gap: "8px", flex: 1,
+    gap: "16px", flex: 1, justifyContent: "center", minHeight: 0,
   },
-  drumWord: {
-    color: "#ffffff", textAlign: "center", lineHeight: "1.15",
-    letterSpacing: "-0.5px", transition: "opacity 0.16s ease, font-size 0.16s ease",
+  drumArrowBtn: {
+    width: "48px", height: "48px", borderRadius: "50%", background: "transparent",
+    border: "1.5px solid rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.45)",
+    fontSize: "16px", cursor: "pointer", transition: "border-color 0.15s",
+    display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+  },
+  drumWordsDisplay: {
+    display: "flex", flexDirection: "column", alignItems: "center",
+    justifyContent: "center", gap: "4px", flex: 1, minHeight: 0,
+  },
+  drumWordItem: {
+    textAlign: "center", lineHeight: "1.1", letterSpacing: "-0.3px",
+    transition: "opacity 0.2s ease, font-size 0.2s ease",
     userSelect: "none", whiteSpace: "nowrap", minHeight: "1em",
+  },
+  drumSelectHint: {
+    fontSize: "11px", color: "rgba(255,255,255,0.25)", letterSpacing: "0.06em",
+    textTransform: "uppercase",
+  },
+  drumBackBtn: {
+    alignSelf: "center", padding: "8px 18px", borderRadius: "20px",
+    background: "transparent", border: "1px solid rgba(255,255,255,0.1)",
+    color: "rgba(255,255,255,0.35)", fontSize: "13px", cursor: "pointer",
+    transition: "all 0.15s", flexShrink: 0,
+  },
+  twoPanelWrapper: {
+    display: "flex", gap: "24px", flex: 1, minHeight: 0, justifyContent: "center",
+    alignItems: "stretch",
+  },
+  leftPanel: {
+    flex: "0 0 280px", display: "flex", flexDirection: "column", gap: "12px",
+    padding: "20px", borderRadius: "16px", background: "rgba(255,255,255,0.03)",
+    border: "1px solid rgba(255,255,255,0.08)", overflow: "auto",
+  },
+  rightPanel: {
+    flex: "0 0 280px", display: "flex", flexDirection: "column", gap: "12px",
+    padding: "20px", borderRadius: "16px", background: "rgba(255,255,255,0.03)",
+    border: "1px solid rgba(255,255,255,0.08)", overflow: "auto",
+  },
+  panelTitle: {
+    margin: "0 0 8px", fontSize: "12px", fontWeight: "600",
+    color: "rgba(255,255,255,0.5)", letterSpacing: "0.1em", textTransform: "uppercase",
+  },
+  commandBtn: {
+    padding: "16px 12px", borderRadius: "12px", border: "1px solid",
+    fontSize: "14px", fontWeight: "500", cursor: "pointer",
+    transition: "all 0.15s ease", textAlign: "center",
+  },
+  suggestionItem: {
+    padding: "12px 16px", borderRadius: "10px", border: "1px solid",
+    fontSize: "13px", fontWeight: "400", cursor: "pointer",
+    transition: "all 0.15s ease", textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+  },
+  suggestionsCarousel: {
+    display: "flex", flexDirection: "column", gap: "8px", flex: 1, overflow: "auto",
+  },
+  noSuggestions: {
+    margin: 0, fontSize: "12px", color: "rgba(255,255,255,0.3)",
+    textAlign: "center", alignSelf: "center", padding: "20px",
   },
 };

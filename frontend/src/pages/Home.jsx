@@ -39,8 +39,8 @@ export default function Home() {
   const navigate = useNavigate();
   const { mode, setControlMode, enabled, register, unregister } = useInputControl();
 
-  const [selIdx, setSelIdx] = useState(null);
-  const selRef = useRef(null);
+  const [selIdx, setSelIdx] = useState(0); // Start with first card highlighted
+  const selRef = useRef(0);
   const setSel = (v) => { selRef.current = v; setSelIdx(v); };
 
   const dwellRef = useRef({ idx: null, start: 0, fired: false });
@@ -50,12 +50,12 @@ export default function Home() {
       if (mode === "head") {
         if (cmd === "LEFT")    setSel(0);
         if (cmd === "RIGHT")   setSel(1);
-        if (cmd === "FORWARD" && selRef.current !== null) navigate(CARDS[selRef.current].route);
+        if (cmd === "FORWARD") navigate(CARDS[selRef.current].route);
 
       } else if (mode === "cnn") {
         if (cmd === "UP"   || cmd === "LEFT")  setSel(0);
         if (cmd === "DOWN" || cmd === "RIGHT") setSel(1);
-        if (cmd === "FORWARD" && selRef.current !== null) navigate(CARDS[selRef.current].route);
+        if (cmd === "FORWARD") navigate(CARDS[selRef.current].route);
 
       } else {
         let newIdx = null;
@@ -73,7 +73,7 @@ export default function Home() {
           }
         }
 
-        if (cmd === "FORWARD" && selRef.current !== null) navigate(CARDS[selRef.current].route);
+        if (cmd === "FORWARD") navigate(CARDS[selRef.current].route);
       }
     });
     return () => unregister();

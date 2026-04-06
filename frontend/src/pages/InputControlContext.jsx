@@ -11,6 +11,21 @@ const NN_SERVER   = "http://localhost:8000";
 const MODEL_URL          = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
 const AUTO_CENTER_FRAMES = 90;
 const DWELL_CONFIRM_MS   = 1500;
+const DIRECTION_DEBOUNCE_MS = 80;  // Reduced from 200ms - too restrictive
+const HYSTERESIS_THRESHOLD  = 0.06; // Reduced from 0.15 - easier direction changes
+const getInitialCenterBuffer = () => {
+  try {
+    const saved = localStorage.getItem("centerBuffer");
+    return saved ? parseFloat(saved) : 0.05;
+  } catch { return 0.05; }
+};
+
+const getInitialCommandDelay = () => {
+  try {
+    const saved = localStorage.getItem("eyeCommandDelay");
+    return saved ? parseFloat(saved) : 200;
+  } catch { return 200; }
+};
 
 // ── Shared timing constants ───────────────────────────────────────────────────
 const AUTO_REPEAT_MS  = 600;
@@ -18,6 +33,19 @@ const AUTO_REPEAT_MS  = 600;
 // ── CNN constants ─────────────────────────────────────────────────────────────
 const CONF_THRESHOLD = 0.55;
 const DEBOUNCE_MS    = 80;
+
+// ── Gesture customization (read from localStorage) ───────────────────────────
+const getCnnClosedMode = () => {
+  try { return localStorage.getItem("cnnClosedMode") || "disabled"; } catch { return "disabled"; }
+};
+
+const getSelectionMethod = () => {
+  try { return localStorage.getItem("eyeSelectionMethod") || "right"; } catch { return "right"; }
+};
+
+const getSelectionDwell = () => {
+  try { const saved = localStorage.getItem("eyeSelectionDwell"); return saved ? parseInt(saved) : 1500; } catch { return 1500; }
+};
 
 // ── Context ───────────────────────────────────────────────────────────────────
 const InputControlContext = createContext(null);
@@ -40,6 +68,7 @@ export function InputControlProvider({ children }) {
   const [eyeReady,    setEyeReady]    = useState(false);
   const [eyeCentered, setEyeCentered] = useState(false);
   const [eyeTracking, setEyeTracking] = useState(false);
+  const [eyeDebug,    setEyeDebug]    = useState(null); // NEW: Debug data for visualization
 
   // ── CNN eye states ───────────────────────────────────────────────────────
   const [cnnReady,  setCnnReady]  = useState(false);
@@ -61,17 +90,28 @@ export function InputControlProvider({ children }) {
   const noFaceFramesRef   = useRef(0);
   const autoCenterBuf     = useRef([]);
   const autoCenterDone    = useRef(false);
+  // Initialize yBias from localStorage
+  const getInitialYBias = () => {
+    try {
+      const saved = localStorage.getItem("eyeYBias");
+      return saved ? parseFloat(saved) : 0.0;
+    } catch { return 0.0; }
+  };
+
   const centerRef         = useRef({ x: 0, y: 0 });
-  const yBiasRef          = useRef(0.0);
+  const centerBufferRef   = useRef(getInitialCenterBuffer());
+  const commandDelayRef   = useRef(getInitialCommandDelay());
+  const yBiasRef          = useRef(getInitialYBias());
   const lastEyeCmdRef     = useRef(null);
   const lastEyeCmdTimeRef = useRef(0);
   const dwellDirRef       = useRef(null);
   const dwellStartRef     = useRef(null);
   const dwellFiredRef     = useRef(false);
-  const lastRepeatRef     = useRef(0);
-  const backCenterStartRef = useRef(null);  // For sustained center gaze = BACK
-  const backCenterFiredRef = useRef(false);
-
+  const selectionDwellStartRef = useRef(null); // Track dwell for configured selection method
+  const selectionDwellFiredRef = useRef(false); // Track if selection dwell fired
+  const lastRepeatRef     = useRef(0);  const lastDirectionRef  = useRef(null);     // NEW: Track last direction
+  const lastDirectionTimeRef = useRef(0);     // NEW: Track when last direction changed
+  const lastGazePointRef  = useRef({ x: 0, y: 0 }); // NEW: For hysteresis
   // keep refs in sync
   useEffect(() => { modeRef.current = mode; }, [mode]);
   useEffect(() => { holdDurationRef.current = holdDuration; }, [holdDuration]);
@@ -147,6 +187,9 @@ export function InputControlProvider({ children }) {
       setEyeReady(false); setEyeCentered(false); setEyeTracking(false);
       autoCenterDone.current = false; autoCenterBuf.current = [];
       window.__irisHistory = []; window.__irisSmooth = null;
+      lastDirectionRef.current = null;
+      lastDirectionTimeRef.current = 0;
+      lastGazePointRef.current = { x: 0, y: 0 };
       return;
     }
 
@@ -208,52 +251,95 @@ export function InputControlProvider({ children }) {
             }
 
             if (autoCenterDone.current) {
-              const direction = classifyGaze(gaze.x, gaze.y, centerRef.current, yBiasRef.current);
+              const newDirection = classifyGazeWithHysteresis(gaze.x, gaze.y, centerRef.current, yBiasRef.current, lastDirectionRef.current, lastGazePointRef.current, centerBufferRef.current);
+              lastGazePointRef.current = { x: gaze.x, y: gaze.y };
               const now = Date.now();
-              
-              // ── CENTER GAZE: sustained for 2s fires BACK ──
-              if (direction === "CENTER") {
-                if (!backCenterStartRef.current) {
-                  backCenterStartRef.current = now;
-                  backCenterFiredRef.current = false;
+
+              // ── DEBOUNCE: Only accept direction changes after 200ms ──
+              let direction = lastDirectionRef.current || newDirection;
+              if (newDirection !== lastDirectionRef.current) {
+                if (now - lastDirectionTimeRef.current >= DIRECTION_DEBOUNCE_MS) {
+                  direction = newDirection;
+                  lastDirectionRef.current = newDirection;
+                  lastDirectionTimeRef.current = now;
+                } else {
+                  // Still debouncing, use last direction
+                  direction = lastDirectionRef.current || newDirection;
                 }
-                if (!backCenterFiredRef.current && (now - backCenterStartRef.current) >= 2000) {
-                  backCenterFiredRef.current = true;
-                  console.log("[Eyes] CENTER held 2s → dispatching BACK");
-                  dispatch("BACK");
-                }
-                // Clear directional state
-                lastEyeCmdRef.current = null; dwellDirRef.current  = null;
-                dwellStartRef.current = null; dwellFiredRef.current = false;
-                lastRepeatRef.current = 0;
               } else {
-                // Reset BACK timer when gaze moves away from CENTER
-                backCenterStartRef.current = null;
-                backCenterFiredRef.current = false;
-                
-                // ── DIRECTIONAL DWELL ──
+                direction = newDirection;
+              }
+
+              // NEW: Update debug visualization
+              try {
+                setEyeDebug({
+                  gazeX: gaze.x.toFixed(3),
+                  gazeY: gaze.y.toFixed(3),
+                  centerX: centerRef.current.x.toFixed(3),
+                  centerY: centerRef.current.y.toFixed(3),
+                  direction: direction,
+                  newDirection: newDirection,
+                  distance: Math.hypot(gaze.x - centerRef.current.x, gaze.y - centerRef.current.y).toFixed(3),
+                  yBias: yBiasRef.current.toFixed(2),
+                  centerBuffer: centerBufferRef.current.toFixed(2),
+                });
+              } catch (e) {
+                console.warn("[Eyes] Debug update error:", e);
+              }
+
+              // ── CONFIGURABLE SELECTION METHOD WITH ADJUSTABLE DWELL ──
+              const selectionMethod = getSelectionMethod(); // center/right/left/up/down
+              const selectionDwell = getSelectionDwell();   // 500-3000ms
+              const delayMs = commandDelayRef.current || 200;
+
+              // Check if current direction matches the configured selection method
+              if (direction === selectionMethod.toUpperCase()) {
+                // This is the selection direction - apply dwell timer
+                if (!selectionDwellStartRef.current) {
+                  selectionDwellStartRef.current = now;
+                  selectionDwellFiredRef.current = false;
+                } else if (!selectionDwellFiredRef.current && (now - selectionDwellStartRef.current) >= selectionDwell) {
+                  // Dwell time reached - fire FORWARD (select)
+                  selectionDwellFiredRef.current = true;
+                  console.log(`[Eyes] ${selectionMethod.toUpperCase()} dwell ${selectionDwell}ms → dispatching SELECT`);
+                  dispatch("FORWARD");
+                  lastEyeCmdTimeRef.current = now;
+                }
+              } else {
+                // Not the selection direction - reset dwell
+                selectionDwellStartRef.current = null;
+                selectionDwellFiredRef.current = false;
+              }
+
+              // ── OTHER DIRECTIONS (navigate without dwell) ──
+              if (direction !== selectionMethod.toUpperCase()) {
+                // This is a navigation direction (not the selection gesture)
                 if (dwellDirRef.current === direction) {
-                  if (direction === "RIGHT") {
-                    if (!dwellFiredRef.current && dwellStartRef.current &&
-                        (now - dwellStartRef.current) >= DWELL_CONFIRM_MS) {
-                      dwellFiredRef.current = true; dispatch("FORWARD");
-                    }
-                  } else {
-                    if ((now - lastRepeatRef.current) >= AUTO_REPEAT_MS) {
-                      lastRepeatRef.current = now; dispatch(direction);
-                    }
+                  // Already holding this direction - repeat with command delay
+                  if ((now - lastRepeatRef.current) >= delayMs) {
+                    lastRepeatRef.current = now;
+                    dispatch(direction);
+                    lastEyeCmdTimeRef.current = now;
                   }
                 } else {
-                  dwellDirRef.current  = direction; dwellStartRef.current = now;
-                  dwellFiredRef.current = false;    lastRepeatRef.current = now;
-                  lastEyeCmdRef.current = direction; lastEyeCmdTimeRef.current = now;
-                  dispatch(direction);
+                  // New direction - fire once and start repeat timer
+                  if ((now - lastEyeCmdTimeRef.current) >= delayMs) {
+                    dwellDirRef.current = direction;
+                    lastRepeatRef.current = now;
+                    lastEyeCmdRef.current = direction;
+                    lastEyeCmdTimeRef.current = now;
+                    dispatch(direction);
+                  }
                 }
+              } else {
+                // Currently holding selection direction - don't dispatch as navigation
+                dwellDirRef.current = null;
+                lastRepeatRef.current = now;
               }
             }
           } else {
             noFaceFramesRef.current++;
-            if (noFaceFramesRef.current > 4) {
+            if (noFaceFramesRef.current > 30) { // Increased from 4 - more tolerant of frame drops
               setEyeTracking(false); lastEyeCmdRef.current = null;
               window.__irisHistory = []; window.__irisSmooth = null;
             }
@@ -283,10 +369,15 @@ export function InputControlProvider({ children }) {
     autoCenterBuf.current = []; autoCenterDone.current = false;
     centerRef.current = { x: 0, y: 0 };
     window.__irisHistory = []; window.__irisSmooth = null;
+    lastDirectionRef.current = null;
+    lastDirectionTimeRef.current = 0;
+    lastGazePointRef.current = { x: 0, y: 0 };
     setEyeCentered(false);
   }, []);
 
   const setYBias = useCallback((v) => { yBiasRef.current = v; }, []);
+  const setCenterBuffer = useCallback((v) => { centerBufferRef.current = v; }, []);
+  const setCommandDelay = useCallback((v) => { commandDelayRef.current = v; }, []);
 
   // ════════════════════════════════════════════════════════════════════════
   // CNN MODE — polls nn_server.py (Pi camera + PyTorch model)
@@ -301,7 +392,6 @@ export function InputControlProvider({ children }) {
     let stableDir   = null;
     let closedStart = null;
     let closedFired = false;
-    let backFired   = false;  // For long CLOSED = BACK
 
     function handlePrediction(data) {
       if (!data.ready) return;
@@ -314,24 +404,21 @@ export function InputControlProvider({ children }) {
       // ── CLOSED: start timer immediately, no debounce needed ──────────────
       if (dir === "CLOSED") {
         if (!closedStart) closedStart = now;
-        
-        // Long-hold (3s) fires BACK
-        if (!backFired && (now - closedStart) >= 3000) {
-          console.log("[CNN] CLOSED held 3s → dispatching BACK");
-          backFired = true;
-          dispatch("BACK");
-        }
-        // Short hold (< 500ms from release) fires SELECT
-        else if (!closedFired && (now - closedStart) >= getClosedMs()) {
+        if (!closedFired && (now - closedStart) >= getClosedMs()) {
           console.log("[CNN] CLOSED held → dispatching FORWARD");
           closedFired = true;
-          dispatch("FORWARD");
+          // Check if CLOSED should map to SELECT (customizable)
+          if (getCnnClosedMode() === "select") {
+            dispatch("FORWARD");
+          } else {
+            dispatch("FORWARD");
+          }
         }
         rawDir = null; stableDir = null;
         return;
       }
 
-      closedStart = null; closedFired = false; backFired = false;
+      closedStart = null; closedFired = false;
 
       // ── navigation directions: small debounce to filter jitter ────────────
       if (dir !== rawDir) { rawDir = dir; rawStart = now; }
@@ -390,7 +477,7 @@ export function InputControlProvider({ children }) {
         holdDuration, setHoldDuration,
         sensorSettings, updateSensorSettings,
         // mediapipe eyes
-        eyeReady, eyeCentered, eyeTracking, recenterEyes, setYBias,
+        eyeReady, eyeCentered, eyeTracking, recenterEyes, setYBias, setCenterBuffer, setCommandDelay, eyeDebug,
         // cnn eyes
         cnnReady, gazeLabel,
       }}
@@ -476,16 +563,38 @@ function estimateRawIrisGaze(lm) {
   const cy = irisYOff * 4.0 + pitch * 2.5;
   return { x: clamp(-cx * 6.0, -4, 4), y: clamp(cy * 5.0, -4, 4) };
 }
-function classifyGaze(x, y, center, yBias) {
+function classifyGazeWithHysteresis(x, y, center, yBias, lastDir, lastPoint, centerBuffer = 0) {
   const dx  = x - center.x;
   const dy  = (y + yBias) - center.y;
   const str = Math.hypot(dx, dy);
-  if (str < 0.04) return "CENTER";
+  
+  // CENTER detection with buffer dead zone
+  const centerThreshold = 0.08 + (centerBuffer || 0);
+  if (str < centerThreshold) return "CENTER";
+  
+  // Require minimum distance from center to trigger any direction (prevents accidental triggers)
+  const minDirectionDistance = 0.15 + (centerBuffer * 0.5);
+  if (str < minDirectionDistance) return "CENTER";
+  
   const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-  if (angle >= -45  && angle <  45)  return "RIGHT";
-  if (angle >=  45  && angle < 135)  return "DOWN";
-  if (angle >= 135  || angle < -135) return "LEFT";
-  return "UP";
+  let newDir = null;
+  if (angle >= -45  && angle <  45)  newDir = "RIGHT";
+  else if (angle >=  45  && angle < 135)  newDir = "DOWN";
+  else if (angle >= 135  || angle < -135) newDir = "LEFT";
+  else newDir = "UP";
+  
+  // Hysteresis: if we had a direction, don't switch unless we've moved significantly away
+  if (lastDir && lastDir !== newDir) {
+    const lastDx = lastPoint.x - center.x;
+    const lastDy = (lastPoint.y + yBias) - center.y;
+    const distance = Math.hypot(dx - lastDx, dy - lastDy);
+    // Only switch if we've moved at least HYSTERESIS_THRESHOLD away
+    if (distance < HYSTERESIS_THRESHOLD) {
+      return lastDir;
+    }
+  }
+  
+  return newDir;
 }
 function avgPts(lm, idx) { let x = 0, y = 0; for (const i of idx) { x += lm[i].x; y += lm[i].y; } return { x: x / idx.length, y: y / idx.length }; }
 function mid(a, b) { return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; }

@@ -10,23 +10,102 @@ export default function Settings() {
     holdDuration, setHoldDuration,
     sensorSettings, updateSensorSettings,
     eyeReady, eyeCentered,
-    recenterEyes, setYBias,
+    recenterEyes, setYBias, setCenterBuffer, setCommandDelay,
     cnnReady, gazeLabel,
   } = useInputControl();
 
-  const [localYBias, setLocalYBias] = useState(0);
+  const [localYBias, setLocalYBias] = useState(() => {
+    try {
+      const saved = localStorage.getItem("eyeYBias");
+      return saved ? parseFloat(saved) : 0;
+    } catch { return 0; }
+  });
+  const [localCenterBuffer, setLocalCenterBuffer] = useState(() => {
+    try {
+      const saved = localStorage.getItem("centerBuffer");
+      return saved ? parseFloat(saved) : 0.05;
+    } catch { return 0.05; }
+  });
+  const [localCommandDelay, setLocalCommandDelay] = useState(() => {
+    try {
+      const saved = localStorage.getItem("eyeCommandDelay");
+      return saved ? parseFloat(saved) : 200;
+    } catch { return 200; }
+  });
+  const [selectionMethod, setSelectionMethod] = useState(() => {
+    try {
+      const saved = localStorage.getItem("eyeSelectionMethod");
+      return saved || "right";
+    } catch { return "right"; }
+  });
+  const [selectionDwell, setSelectionDwell] = useState(() => {
+    try {
+      const saved = localStorage.getItem("eyeSelectionDwell");
+      return saved ? parseInt(saved) : 1500;
+    } catch { return 1500; }
+  });
   const [closedMs,   setClosedMs]   = useState(() => getClosedMs());
+  const [mediapiaCenterMode, setMediapiaCenterMode] = useState(() => 
+    localStorage.getItem("mediapiapeCenterMode") || "disabled"
+  );
+  const [cnnClosedMode, setCnnClosedMode] = useState(() => 
+    localStorage.getItem("cnnClosedMode") || "disabled"
+  );
+
+  // Persist Y-bias to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem("eyeYBias", localYBias.toString());
+    } catch {}
+  }, [localYBias]);
+
+  // Persist center buffer to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem("centerBuffer", localCenterBuffer.toString());
+    } catch {}
+  }, [localCenterBuffer]);
+
+  // Persist command delay to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem("eyeCommandDelay", localCommandDelay.toString());
+    } catch {}
+  }, [localCommandDelay]);
+
+  // Persist selection method
+  useEffect(() => {
+    try {
+      localStorage.setItem("eyeSelectionMethod", selectionMethod);
+    } catch {}
+  }, [selectionMethod]);
+
+  // Persist selection dwell
+  useEffect(() => {
+    try {
+      localStorage.setItem("eyeSelectionDwell", selectionDwell.toString());
+    } catch {}
+  }, [selectionDwell]);
 
   useEffect(() => {
     register((cmd) => {
       if (cmd === "BACK") navigate("/");
-      if (cmd === "LEFT" && mode !== "cnn") navigate("/");
     });
     return () => unregister();
   }, [mode]);
 
   const handleSensor = (key, value) =>
     updateSensorSettings({ ...sensorSettings, [key]: value });
+
+  const handleMediapiaCenterModeChange = (value) => {
+    setMediapiaCenterMode(value);
+    localStorage.setItem("mediapiapeCenterMode", value);
+  };
+
+  const handleCnnClosedModeChange = (value) => {
+    setCnnClosedMode(value);
+    localStorage.setItem("cnnClosedMode", value);
+  };
 
   return (
     <div style={s.page}>
@@ -123,93 +202,164 @@ export default function Settings() {
 
         {/* ── Eyes mode (MediaPipe, webcam) ── */}
         {mode === "eyes" && (
-          <section style={s.section}>
-            <div style={s.sectionHeader}>
-              <span style={s.sectionIcon}>👁️</span>
-              <div>
-                <p style={s.sectionTitle}>Eye Tracking</p>
-                <p style={s.sectionSub}>
-                  {eyeCentered ? "Centred and tracking" : eyeReady ? "Centering…" : "Initialising camera…"}
-                </p>
+          <>
+            <section style={s.section}>
+              <div style={s.sectionHeader}>
+                <span style={s.sectionIcon}>👁️</span>
+                <div>
+                  <p style={s.sectionTitle}>Eye Tracking</p>
+                  <p style={s.sectionSub}>
+                    {eyeCentered ? "Centred and tracking" : eyeReady ? "Centering…" : "Initialising camera…"}
+                  </p>
+                </div>
               </div>
-            </div>
 
-            <SliderRow label="Y-axis bias" hint="If stuck on DOWN drag left · if stuck on UP drag right"
-              value={localYBias} display={localYBias.toFixed(2)}
-              min={-2.0} max={2.0} step={0.05} accent="#22c55e"
-              onChange={v => { setLocalYBias(v); setYBias(v); }} />
+              <SliderRow label="Y-axis bias" hint="If stuck on DOWN drag left · if stuck on UP drag right"
+                value={localYBias} display={localYBias.toFixed(2)}
+                min={-2.0} max={2.0} step={0.05} accent="#22c55e"
+                onChange={v => { setLocalYBias(v); setYBias(v); }} />
 
-            <Divider />
+              <Divider />
 
-            <button style={s.recenterBtn}
-              onMouseEnter={e => e.currentTarget.style.background = "rgba(34,197,94,0.12)"}
-              onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-              onClick={recenterEyes}>
-              Re-centre eye tracking
-            </button>
+              <SliderRow label="Center stability buffer" hint="Higher = smoother center, lower = more responsive"
+                value={localCenterBuffer} display={localCenterBuffer.toFixed(2)}
+                min={0.0} max={1.5} step={0.01} accent="#22c55e"
+                onChange={v => { setLocalCenterBuffer(v); setCenterBuffer(v); }} />
 
-            <p style={{ fontSize: 12, color: "rgba(255,255,255,0.22)", margin: 0 }}>
-              Hold gaze RIGHT for ~1.5 s to confirm · UP/DOWN navigate · LEFT goes back
-            </p>
-          </section>
+              <Divider />
+
+              <SliderRow label="Command delay" hint="Milliseconds between commands (higher = slower navigation)"
+                value={localCommandDelay} display={`${Math.round(localCommandDelay)} ms`}
+                min={50} max={500} step={50} accent="#22c55e"
+                onChange={v => { setLocalCommandDelay(v); setCommandDelay(v); }} />
+
+              <Divider />
+
+              <button style={s.recenterBtn}
+                onMouseEnter={e => e.currentTarget.style.background = "rgba(34,197,94,0.12)"}
+                onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                onClick={recenterEyes}>
+                Re-centre eye tracking
+              </button>
+
+              <p style={{ fontSize: 12, color: "rgba(255,255,255,0.22)", margin: 0 }}>
+                Hold gaze RIGHT for ~1.5 s to confirm · UP/DOWN navigate · LEFT goes back
+              </p>
+            </section>
+
+            <section style={s.section}>
+              <div style={s.sectionHeader}>
+                <span style={s.sectionIcon}>⚙️</span>
+                <div>
+                  <p style={s.sectionTitle}>Selection Method</p>
+                  <p style={s.sectionSub}>How to confirm and select items</p>
+                </div>
+              </div>
+              <div style={s.selectRow}>
+                <label style={s.selectLabel}>Select using:</label>
+                <select value={selectionMethod} onChange={e => setSelectionMethod(e.target.value)}
+                  style={s.selectInput}>
+                  <option value="right">RIGHT (hold right)</option>
+                  <option value="left">LEFT (hold left)</option>
+                  <option value="up">UP (hold up)</option>
+                  <option value="down">DOWN (hold down)</option>
+                  <option value="center">CENTER (hold center)</option>
+                </select>
+              </div>
+
+              <Divider />
+
+              <SliderRow label="Selection dwell time" hint="How long to hold the gaze direction to select"
+                value={selectionDwell} display={`${selectionDwell} ms`}
+                min={500} max={3000} step={100} accent="#22c55e"
+                onChange={v => setSelectionDwell(v)} />
+
+              <p style={{ fontSize: 12, color: "rgba(255,255,255,0.22)", margin: "8px 0 0 0" }}>
+                Hold your gaze in the selected direction for the specified duration to confirm
+              </p>
+            </section>
+          </>
         )}
 
         {/* ── CNN mode (Pi camera + PyTorch model) ── */}
         {mode === "cnn" && (
-          <section style={s.section}>
-            <div style={s.sectionHeader}>
-              <span style={s.sectionIcon}>🧠</span>
-              <div>
-                <p style={s.sectionTitle}>CNN Eye Tracking</p>
-                <p style={s.sectionSub}>
-                  {cnnReady ? "Connected to nn_server.py" : "Waiting for nn_server.py on :5001…"}
-                </p>
+          <>
+            <section style={s.section}>
+              <div style={s.sectionHeader}>
+                <span style={s.sectionIcon}>🧠</span>
+                <div>
+                  <p style={s.sectionTitle}>CNN Eye Tracking</p>
+                  <p style={s.sectionSub}>
+                    {cnnReady ? "Connected to nn_server.py" : "Waiting for nn_server.py on :5001…"}
+                  </p>
+                </div>
               </div>
-            </div>
 
-            {/* camera preview */}
-            <img
-              src="http://localhost:8000/camera/stream"
-              alt="Pi camera"
-              style={{
-                width: "100%", borderRadius: 12, border: "1px solid rgba(255,255,255,0.08)",
-                background: "#000", aspectRatio: "4/3", objectFit: "cover",
-                display: cnnReady ? "block" : "none",
-              }}
-            />
-            {!cnnReady && (
-              <div style={{ textAlign: "center", color: "rgba(255,255,255,0.2)", fontSize: 13, padding: "20px 0" }}>
-                Camera preview will appear once connected
+              {/* camera preview */}
+              <img
+                src="http://localhost:8000/camera/stream"
+                alt="Pi camera"
+                style={{
+                  width: "100%", borderRadius: 12, border: "1px solid rgba(255,255,255,0.08)",
+                  background: "#000", aspectRatio: "4/3", objectFit: "cover",
+                  display: cnnReady ? "block" : "none",
+                }}
+              />
+              {!cnnReady && (
+                <div style={{ textAlign: "center", color: "rgba(255,255,255,0.2)", fontSize: 13, padding: "20px 0" }}>
+                  Camera preview will appear once connected
+                </div>
+              )}
+
+              {/* live gaze badge */}
+              <div style={s.gazeRow}>
+                <span style={s.gazeLabel}>Current gaze</span>
+                <span style={{
+                  ...s.gazeBadge,
+                  background:  cnnReady ? "rgba(34,197,94,0.12)" : "rgba(255,255,255,0.04)",
+                  color:       cnnReady ? "#86efac"              : "rgba(255,255,255,0.25)",
+                  borderColor: cnnReady ? "rgba(34,197,94,0.3)"  : "rgba(255,255,255,0.08)",
+                }}>
+                  {cnnReady ? gazeLabel : "—"}
+                </span>
               </div>
-            )}
 
-            {/* live gaze badge */}
-            <div style={s.gazeRow}>
-              <span style={s.gazeLabel}>Current gaze</span>
-              <span style={{
-                ...s.gazeBadge,
-                background:  cnnReady ? "rgba(34,197,94,0.12)" : "rgba(255,255,255,0.04)",
-                color:       cnnReady ? "#86efac"              : "rgba(255,255,255,0.25)",
-                borderColor: cnnReady ? "rgba(34,197,94,0.3)"  : "rgba(255,255,255,0.08)",
-              }}>
-                {cnnReady ? gazeLabel : "—"}
-              </span>
-            </div>
+              <Divider />
 
-            <Divider />
+              <SliderRow
+                label="Close-eyes select duration"
+                hint="How long to keep eyes CLOSED to confirm a selection"
+                value={closedMs} display={`${closedMs} ms`}
+                min={500} max={3000} step={100} accent="#22c55e"
+                onChange={v => { setClosedMs(v); saveSettings({ closedMs: v }); }}
+              />
 
-            <SliderRow
-              label="Close-eyes select duration"
-              hint="How long to keep eyes CLOSED to confirm a selection"
-              value={closedMs} display={`${closedMs} ms`}
-              min={500} max={3000} step={100} accent="#22c55e"
-              onChange={v => { setClosedMs(v); saveSettings({ closedMs: v }); }}
-            />
+              <p style={{ fontSize: 12, color: "rgba(255,255,255,0.22)", margin: 0 }}>
+                UP/DOWN/LEFT/RIGHT navigate · CLOSE eyes for the duration above to confirm
+              </p>
+            </section>
 
-            <p style={{ fontSize: 12, color: "rgba(255,255,255,0.22)", margin: 0 }}>
-              UP/DOWN/LEFT/RIGHT navigate · CLOSE eyes for the duration above to confirm
-            </p>
-          </section>
+            <section style={s.section}>
+              <div style={s.sectionHeader}>
+                <span style={s.sectionIcon}>⚙️</span>
+                <div>
+                  <p style={s.sectionTitle}>Closed Eyes Behavior</p>
+                  <p style={s.sectionSub}>How to confirm actions with closed eyes</p>
+                </div>
+              </div>
+              <div style={s.selectRow}>
+                <label style={s.selectLabel}>When you close your eyes:</label>
+                <select value={cnnClosedMode} onChange={e => handleCnnClosedModeChange(e.target.value)}
+                  style={s.selectInput}>
+                  <option value="disabled">Disabled (no action)</option>
+                  <option value="select">Map to Select (confirm action)</option>
+                </select>
+              </div>
+              <p style={{ fontSize: 12, color: "rgba(255,255,255,0.22)", margin: "8px 0 0 0" }}>
+                If enabled, closing your eyes will act like confirming your selection
+              </p>
+            </section>
+          </>
         )}
       </div>
 
@@ -247,6 +397,18 @@ function SliderRow({ label, hint, value, display, min, max, step, accent, onChan
     </div>
   );
 }
+
+<style>{`
+  select option {
+    background: #1a1a1a;
+    color: #fff;
+    padding: 10px;
+  }
+  select option:checked {
+    background: linear-gradient(#22c55e, #22c55e);
+    color: #1a1a1a;
+  }
+`}</style>
 
 function Divider() {
   return <div style={{ height: 1, background: "rgba(255,255,255,0.05)", margin: "4px 0" }} />;
@@ -315,6 +477,21 @@ const s = {
     padding: "4px 14px", borderRadius: 99,
     border: "1px solid", fontSize: "13px", fontWeight: "600",
     letterSpacing: "0.08em", transition: "all 0.2s",
+  },
+  selectRow: { display: "flex", flexDirection: "column", gap: "10px" },
+  selectLabel: { fontSize: "13px", fontWeight: "500", color: "rgba(255,255,255,0.65)" },
+  selectInput: {
+    padding: "12px 16px", borderRadius: "12px", background: "linear-gradient(135deg, rgba(34,197,94,0.15) 0%, rgba(34,197,94,0.08) 100%)",
+    border: "1.5px solid rgba(34,197,94,0.4)", color: "#fff",
+    fontSize: "13px", fontWeight: "500", cursor: "pointer", 
+    transition: "all 0.2s ease",
+    boxShadow: "0 4px 12px rgba(34,197,94,0.1)",
+    appearance: "none",
+    backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2386efac' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
+    backgroundRepeat: "no-repeat",
+    backgroundPosition: "right 12px center",
+    backgroundSize: "18px",
+    paddingRight: "40px",
   },
   legend: {
     position: "fixed", bottom: 28, left: 0, right: 0, textAlign: "center",

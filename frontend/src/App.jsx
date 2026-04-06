@@ -8,6 +8,7 @@ import Pain        from "./pages/Pain";
 import CaretakerDashboard from "./pages/caretaker/CaretakerDashboard";
 import { InputControlProvider } from "./pages/InputControlContext";
 import Settings from "./pages/Settings";
+import EyeTrackingDebug from "./components/EyeTrackingDebug";
 
 function App() {
   return (
@@ -23,6 +24,7 @@ function App() {
           <Route path="/caretaker"   element={<CaretakerDashboard />} />
           <Route path="/settings"    element={<Settings />} />
         </Routes>
+        <EyeTrackingDebug />
       </BrowserRouter>
     </InputControlProvider>
   );
