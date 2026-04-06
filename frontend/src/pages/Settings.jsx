@@ -48,9 +48,12 @@ export default function Settings() {
   const [mediapiaCenterMode, setMediapiaCenterMode] = useState(() => 
     localStorage.getItem("mediapiapeCenterMode") || "disabled"
   );
-  const [cnnClosedMode, setCnnClosedMode] = useState(() => 
-    localStorage.getItem("cnnClosedMode") || "disabled"
-  );
+  const [headSelectionMethod, setHeadSelectionMethod] = useState(() => {
+    try {
+      const saved = localStorage.getItem("headSelectionMethod");
+      return saved || "forward";
+    } catch { return "forward"; }
+  });
 
   // Persist Y-bias to localStorage whenever it changes
   useEffect(() => {
@@ -87,6 +90,20 @@ export default function Settings() {
     } catch {}
   }, [selectionDwell]);
 
+  // Persist closed eyes duration for CNN
+  useEffect(() => {
+    try {
+      localStorage.setItem("closedMs", closedMs.toString());
+    } catch {}
+  }, [closedMs]);
+
+  // Persist HEAD selection method
+  useEffect(() => {
+    try {
+      localStorage.setItem("headSelectionMethod", headSelectionMethod);
+    } catch {}
+  }, [headSelectionMethod]);
+
   useEffect(() => {
     register((cmd) => {
       if (cmd === "BACK") navigate("/");
@@ -100,11 +117,6 @@ export default function Settings() {
   const handleMediapiaCenterModeChange = (value) => {
     setMediapiaCenterMode(value);
     localStorage.setItem("mediapiapeCenterMode", value);
-  };
-
-  const handleCnnClosedModeChange = (value) => {
-    setCnnClosedMode(value);
-    localStorage.setItem("cnnClosedMode", value);
   };
 
   return (
@@ -144,7 +156,29 @@ export default function Settings() {
                   <p style={s.sectionSub}>Controls how the head input feels</p>
                 </div>
               </div>
-              <SliderRow label="Hold Duration" hint="How long to hold FORWARD or BACK"
+              <div style={s.row}>
+                <label style={s.label}>Selection Command</label>
+                <select 
+                  value={headSelectionMethod} 
+                  onChange={(e) => setHeadSelectionMethod(e.target.value)}
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "1.5px solid rgba(255,255,255,0.15)",
+                    backgroundColor: "rgba(17,24,39,0.8)",
+                    color: "#fff",
+                    fontFamily: "inherit",
+                    fontSize: "14px",
+                    cursor: "pointer",
+                  }}
+                >
+                  <option value="forward">FORWARD · confirm/select</option>
+                  <option value="back">BACK · confirm/select</option>
+                </select>
+              </div>
+              <p style={s.hint}>Which head motion triggers selection</p>
+              <Divider />
+              <SliderRow label="Hold Duration" hint="How long to hold selection command"
                 value={holdDuration} display={`${holdDuration} ms`}
                 min={200} max={1200} step={50} accent="#a78bfa" onChange={setHoldDuration} />
             </section>
@@ -324,39 +358,60 @@ export default function Settings() {
                 </span>
               </div>
 
-              <Divider />
-
-              <SliderRow
-                label="Close-eyes select duration"
-                hint="How long to keep eyes CLOSED to confirm a selection"
-                value={closedMs} display={`${closedMs} ms`}
-                min={500} max={3000} step={100} accent="#22c55e"
-                onChange={v => { setClosedMs(v); saveSettings({ closedMs: v }); }}
-              />
-
-              <p style={{ fontSize: 12, color: "rgba(255,255,255,0.22)", margin: 0 }}>
-                UP/DOWN/LEFT/RIGHT navigate · CLOSE eyes for the duration above to confirm
-              </p>
             </section>
 
             <section style={s.section}>
               <div style={s.sectionHeader}>
                 <span style={s.sectionIcon}>⚙️</span>
                 <div>
-                  <p style={s.sectionTitle}>Closed Eyes Behavior</p>
-                  <p style={s.sectionSub}>How to confirm actions with closed eyes</p>
+                  <p style={s.sectionTitle}>CNN Selection Method</p>
+                  <p style={s.sectionSub}>How to confirm and select items</p>
                 </div>
               </div>
               <div style={s.selectRow}>
-                <label style={s.selectLabel}>When you close your eyes:</label>
-                <select value={cnnClosedMode} onChange={e => handleCnnClosedModeChange(e.target.value)}
+                <label style={s.selectLabel}>Select using:</label>
+                <select value={selectionMethod} onChange={e => setSelectionMethod(e.target.value)}
                   style={s.selectInput}>
-                  <option value="disabled">Disabled (no action)</option>
-                  <option value="select">Map to Select (confirm action)</option>
+                  <option value="closed">CLOSED (close eyes)</option>
+                  <option value="up">UP (hold up)</option>
+                  <option value="down">DOWN (hold down)</option>
+                  <option value="left">LEFT (hold left)</option>
+                  <option value="right">RIGHT (hold right)</option>
                 </select>
               </div>
+
+              {selectionMethod === "closed" && (
+                <>
+                  <Divider />
+                  <SliderRow
+                    label="Close-eyes select duration"
+                    hint="How long to keep eyes CLOSED to confirm a selection"
+                    value={closedMs} display={`${closedMs} ms`}
+                    min={500} max={3000} step={100} accent="#22c55e"
+                    onChange={v => setClosedMs(v)}
+                  />
+                </>
+              )}
+
+              {selectionMethod !== "closed" && (
+                <>
+                  <Divider />
+                  <SliderRow label="Selection dwell time" hint="How long to hold the gaze direction to select"
+                    value={selectionDwell} display={`${selectionDwell} ms`}
+                    min={500} max={3000} step={100} accent="#22c55e"
+                    onChange={v => setSelectionDwell(v)} />
+                </>
+              )}
+
+              <Divider />
+
+              <SliderRow label="Command delay" hint="Milliseconds between commands (higher = slower navigation)"
+                value={localCommandDelay} display={`${Math.round(localCommandDelay)} ms`}
+                min={50} max={500} step={50} accent="#22c55e"
+                onChange={v => { setLocalCommandDelay(v); setCommandDelay(v); }} />
+
               <p style={{ fontSize: 12, color: "rgba(255,255,255,0.22)", margin: "8px 0 0 0" }}>
-                If enabled, closing your eyes will act like confirming your selection
+                {selectionMethod === "closed" ? "Close eyes for the duration above to select" : "Hold your gaze in the selected direction for the duration above to confirm"}
               </p>
             </section>
           </>
@@ -365,7 +420,7 @@ export default function Settings() {
 
       {enabled && (
         <p style={s.legend}>
-          {mode === "head" ? "BACK · return home" : "← LEFT · return home"}
+          {mode === "head" ? "BACK · return home" : "BACK · return home"}
         </p>
       )}
     </div>

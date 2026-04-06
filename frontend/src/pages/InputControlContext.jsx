@@ -5,7 +5,7 @@ import { getClosedMs } from "../utils/settings";
 
 // ── Server addresses ──────────────────────────────────────────────────────────
 const HEAD_SERVER = "http://10.237.97.5:5000";
-const NN_SERVER   = "http://localhost:8000";
+const NN_SERVER   = "http://localhost:8001";
 
 // ── MediaPipe constants ───────────────────────────────────────────────────────
 const MODEL_URL          = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
@@ -35,12 +35,12 @@ const CONF_THRESHOLD = 0.55;
 const DEBOUNCE_MS    = 80;
 
 // ── Gesture customization (read from localStorage) ───────────────────────────
-const getCnnClosedMode = () => {
-  try { return localStorage.getItem("cnnClosedMode") || "disabled"; } catch { return "disabled"; }
-};
-
 const getSelectionMethod = () => {
   try { return localStorage.getItem("eyeSelectionMethod") || "right"; } catch { return "right"; }
+};
+
+const getHeadSelectionMethod = () => {
+  try { return localStorage.getItem("headSelectionMethod") || "forward"; } catch { return "forward"; }
 };
 
 const getSelectionDwell = () => {
@@ -109,6 +109,12 @@ export function InputControlProvider({ children }) {
   const dwellFiredRef     = useRef(false);
   const selectionDwellStartRef = useRef(null); // Track dwell for configured selection method
   const selectionDwellFiredRef = useRef(false); // Track if selection dwell fired
+  const cnnClosedStartRef = useRef(null);     // Track closed eyes dwell for CNN
+  const cnnClosedFiredRef = useRef(false);    // Track if CNN closed eyes fired
+  const cnnSelectionDwellStartRef = useRef(null); // Track direction dwell for CNN
+  const cnnSelectionDwellFiredRef = useRef(false); // Track if CNN direction dwell fired
+  const cnnLastCmdTimeRef = useRef(0);        // Track CNN command delay (CRITICAL FIX)
+  const headLastCmdTimeRef = useRef(0);       // Track HEAD command delay (CRITICAL FIX)
   const lastRepeatRef     = useRef(0);  const lastDirectionRef  = useRef(null);     // NEW: Track last direction
   const lastDirectionTimeRef = useRef(0);     // NEW: Track when last direction changed
   const lastGazePointRef  = useRef({ x: 0, y: 0 }); // NEW: For hysteresis
@@ -123,56 +129,112 @@ export function InputControlProvider({ children }) {
   const dispatch   = useCallback((cmd) => { if (handlerRef.current && cmd) handlerRef.current(cmd); }, []);
 
   // ════════════════════════════════════════════════════════════════════════
-  // HEAD CONTROL (ESP32 via socket.io)
+  // HEAD CONTROL (ESP32 via native WebSocket)
   // ════════════════════════════════════════════════════════════════════════
   useEffect(() => {
-    if (mode !== "head") {
-      if (socketRef.current) {
-        socketRef.current.off("command");
-        socketRef.current.disconnect();
-        socketRef.current = null;
-      }
-      return;
+    if (mode !== "head") return;
+
+    // Fetch settings from backend (skip in dev mode - localhost only has test server)
+    if (window.location.hostname !== "localhost") {
+      fetch(`${HEAD_SERVER}/settings`)
+        .then(r => r.json())
+        .then(s => setSensorSettings({
+          alpha:     s.alpha     ?? 0.5,
+          threshold: s.threshold ?? 1.5,
+          deadzone:  s.deadzone  ?? 1.0,
+        }))
+        .catch(() => {});
+    } else {
+      // Dev mode - use defaults
+      setSensorSettings({
+        alpha: 0.5,
+        threshold: 1.5,
+        deadzone: 1.0,
+      });
     }
 
-    const socket = io(HEAD_SERVER, { transports: ["websocket"] });
-    socketRef.current = socket;
+    // Connect to WebSocket
+    let ws;
+    let isConnected = false;
+    let currentWsUrl = null;
+    const commandDelay = commandDelayRef.current;
 
-    fetch(`${HEAD_SERVER}/settings`)
-      .then(r => r.json())
-      .then(s => setSensorSettings({
-        alpha:     s.alpha     ?? 0.5,
-        threshold: s.threshold ?? 1.5,
-        deadzone:  s.deadzone  ?? 1.0,
-      }))
-      .catch(() => {});
+    function connect() {
+      // Try test server first (localhost:8002), then fallback to real backend
+      const testWsUrl = "ws://localhost:8002/ws/head";
+      const backendWsUrl = HEAD_SERVER.replace("http", "ws") + "/ws/head";
+      
+      // Use test server if available (development), else use backend
+      const wsUrl = window.location.hostname === "localhost" ? testWsUrl : backendWsUrl;
+      currentWsUrl = wsUrl;
+      
+      console.log("[HEAD] connecting to " + wsUrl);
+      ws = new WebSocket(wsUrl);
 
-    socket.on("command", ({ cmd }) => {
-      if (modeRef.current !== "head" || !handlerRef.current) return;
-      const now  = Date.now();
-      const prev = holdRef.current.cmd;
-      if (!cmd) { holdRef.current = { cmd: null, start: 0 }; return; }
-      if (prev !== cmd) {
-        holdRef.current = { cmd, start: now };
-        if (cmd === "LEFT" || cmd === "RIGHT") handlerRef.current(cmd);
-        return;
-      }
-      if ((cmd === "FORWARD" || cmd === "BACK") && now - holdRef.current.start >= holdDurationRef.current) {
-        handlerRef.current(cmd);
-        holdRef.current = { cmd: null, start: 0 };
-      }
-    });
+      ws.onopen = () => {
+        isConnected = true;
+        console.log("[HEAD] WebSocket connected to " + wsUrl);
+      };
 
-    return () => { socket.off("command"); socket.disconnect(); socketRef.current = null; };
-  }, [mode]);
+      ws.onmessage = (e) => {
+        if (modeRef.current !== "head" || !handlerRef.current) return;
+        const data = JSON.parse(e.data);
+        const cmd = data.cmd; // null or LEFT/RIGHT/FORWARD/BACK
+        const now = Date.now();
+        const selectionCmd = getHeadSelectionMethod().toUpperCase(); // FORWARD or BACK
+        const navigationCmd = selectionCmd === "FORWARD" ? "BACK" : "FORWARD"; // The other one for navigation
+
+        // Reset hold state on neutral
+        if (!cmd) {
+          holdRef.current = { cmd: null, start: 0 };
+          return;
+        }
+
+        const prev = holdRef.current.cmd;
+
+        // New command received
+        if (prev !== cmd) {
+          holdRef.current = { cmd, start: now };
+          // LEFT/RIGHT: immediate navigation with command delay throttling
+          if (cmd === "LEFT" || cmd === "RIGHT") {
+            if ((now - headLastCmdTimeRef.current) >= commandDelay) {
+              console.log(`[HEAD] dispatch ${cmd}`);
+              dispatch(cmd);
+              headLastCmdTimeRef.current = now;
+            }
+          }
+          return;
+        }
+
+        // Same command held
+        if (cmd === selectionCmd && now - holdRef.current.start >= holdDurationRef.current) {
+          dispatch("FORWARD"); // Always dispatch FORWARD for selection
+          holdRef.current = { cmd: null, start: 0 };
+        }
+      };
+
+      ws.onerror = () => console.warn("[HEAD] WebSocket error");
+      ws.onclose = () => {
+        isConnected = false;
+        console.warn("[HEAD] WebSocket closed, retrying in 2s…");
+        setTimeout(() => { if (modeRef.current === "head") connect(); }, 2000);
+      };
+    }
+
+    connect();
+    return () => { ws && ws.close(); };
+  }, [mode, dispatch]);
 
   const updateSensorSettings = useCallback((newSettings) => {
     setSensorSettings(newSettings);
-    fetch(`${HEAD_SERVER}/settings`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(newSettings),
-    }).catch(() => {});
+    // Only send to backend in production (not localhost test mode)
+    if (window.location.hostname !== "localhost") {
+      fetch(`${HEAD_SERVER}/settings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newSettings),
+      }).catch(() => {});
+    }
   }, []);
 
   // ════════════════════════════════════════════════════════════════════════
@@ -390,8 +452,7 @@ export function InputControlProvider({ children }) {
     let rawDir      = null;
     let rawStart    = 0;
     let stableDir   = null;
-    let closedStart = null;
-    let closedFired = false;
+    let isConnected = false;
 
     function handlePrediction(data) {
       if (!data.ready) return;
@@ -400,48 +461,76 @@ export function InputControlProvider({ children }) {
 
       const now = Date.now();
       const dir = data.confidence >= CONF_THRESHOLD ? data.name : null;
+      const selectionMethod = getSelectionMethod(); // "closed"/right/left/up/down
+      const selectionDwell = getSelectionDwell();   // 500-3000ms
+      const commandDelay = commandDelayRef.current || 200;
 
-      // ── CLOSED: start timer immediately, no debounce needed ──────────────
-      if (dir === "CLOSED") {
-        if (!closedStart) closedStart = now;
-        if (!closedFired && (now - closedStart) >= getClosedMs()) {
-          console.log("[CNN] CLOSED held → dispatching FORWARD");
-          closedFired = true;
-          // Check if CLOSED should map to SELECT (customizable)
-          if (getCnnClosedMode() === "select") {
-            dispatch("FORWARD");
-          } else {
+      // ── CLOSED or direction-based selection ──────────────────────────────
+      if (selectionMethod.toUpperCase() === "CLOSED") {
+        // CLOSED eyes for selection
+        if (dir === "CLOSED") {
+          if (!cnnClosedStartRef.current) {
+            cnnClosedStartRef.current = now;
+            cnnClosedFiredRef.current = false;
+          } else if (!cnnClosedFiredRef.current && (now - cnnClosedStartRef.current) >= getClosedMs()) {
+            console.log("[CNN] CLOSED held → dispatching FORWARD");
+            cnnClosedFiredRef.current = true;
             dispatch("FORWARD");
           }
+          rawDir = null; stableDir = null;
+          return;
+        }
+        cnnClosedStartRef.current = null;
+        cnnClosedFiredRef.current = false;
+      } else if (dir === selectionMethod.toUpperCase()) {
+        // Direction-based selection with dwell
+        if (!cnnSelectionDwellStartRef.current) {
+          cnnSelectionDwellStartRef.current = now;
+          cnnSelectionDwellFiredRef.current = false;
+        } else if (!cnnSelectionDwellFiredRef.current && (now - cnnSelectionDwellStartRef.current) >= selectionDwell) {
+          cnnSelectionDwellFiredRef.current = true;
+          console.log(`[CNN] ${selectionMethod.toUpperCase()} dwell ${selectionDwell}ms → dispatching FORWARD`);
+          dispatch("FORWARD");
         }
         rawDir = null; stableDir = null;
         return;
+      } else {
+        // Not the selection direction - reset dwell
+        cnnSelectionDwellStartRef.current = null;
+        cnnSelectionDwellFiredRef.current = false;
       }
 
-      closedStart = null; closedFired = false;
-
-      // ── navigation directions: small debounce to filter jitter ────────────
+      // ── navigation directions: small debounce + command delay ──────────────
       if (dir !== rawDir) { rawDir = dir; rawStart = now; }
 
       const isStable = dir !== null && (now - rawStart) >= DEBOUNCE_MS;
       if (!isStable) { stableDir = null; return; }
 
       if (stableDir !== dir) {
-        console.log(`[CNN] dispatch ${dir}  (conf=${data.confidence.toFixed(2)})`);
-        stableDir = dir;
-        dispatch(dir);
+        // Apply command delay before dispatching navigation
+        if ((now - cnnLastCmdTimeRef.current) >= commandDelay) {
+          console.log(`[CNN] dispatch ${dir}  (conf=${data.confidence.toFixed(2)})`);
+          stableDir = dir;
+          dispatch(dir);
+          cnnLastCmdTimeRef.current = now;
+        }
       }
       // no auto-repeat — user must look away and back to fire again
     }
 
     let ws;
     function connect() {
-      console.log("[CNN] connecting to ws://localhost:8000/ws/predict");
-      ws = new WebSocket("ws://localhost:8000/ws/predict");
-      ws.onopen    = () => console.log("[CNN] WebSocket connected");
+      if (isConnected) return; // Prevent duplicate connections
+      console.log("[CNN] connecting to ws://localhost:8001/ws/predict");
+      ws = new WebSocket("ws://localhost:8001/ws/predict");
+      ws.onopen    = () => {
+        isConnected = true;
+        console.log("[CNN] WebSocket connected");
+      };
       ws.onmessage = (e) => handlePrediction(JSON.parse(e.data));
       ws.onerror   = () => console.warn("[CNN] WebSocket error — is the backend running?");
       ws.onclose   = () => {
+        isConnected = false;
         setCnnReady(false);
         setGazeLabel("—");
         console.warn("[CNN] WebSocket closed, retrying in 2s…");
