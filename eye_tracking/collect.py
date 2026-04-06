@@ -12,16 +12,53 @@ Controls:
 
 Run:
     python collect.py
+
+Default source:
+    FastAPI MJPEG stream at http://localhost:8000/camera/stream
+
+Optional (legacy Pi TCP stream):
+    python collect.py --source pi
 """
 
+import argparse
+import os
 import sqlite3
 import time
 import cv2
-from stream_client import frames
 from eye_tracking import LABELS, IMG_H, IMG_W
 
-DB     = "training_data.db"
+DB     = os.path.join(os.path.dirname(__file__), "training_data.db")
 TARGET = 80   # samples per class before label turns green
+
+
+# ── frame sources ─────────────────────────────────────────────────────────────
+def frames_from_backend(url: str = "http://localhost:8000/camera/stream"):
+    """Yield frames from FastAPI MJPEG endpoint with auto-reconnect."""
+    while True:
+        cap = cv2.VideoCapture(url)
+        if not cap.isOpened():
+            print(f"[collect] cannot open backend stream: {url} (retry in 2s)")
+            time.sleep(2)
+            continue
+
+        print(f"[collect] connected to backend stream: {url}")
+        try:
+            while True:
+                ok, frame = cap.read()
+                if not ok or frame is None:
+                    print("[collect] backend stream lost (retry in 2s)")
+                    break
+                yield frame
+        finally:
+            cap.release()
+            time.sleep(2)
+
+
+def get_frames(source: str):
+    if source == "pi":
+        from stream_client import frames as pi_frames
+        return pi_frames()
+    return frames_from_backend()
 
 
 # ── DB ────────────────────────────────────────────────────────────────────────
@@ -61,7 +98,7 @@ def get_counts(conn) -> dict:
 # ── overlay ───────────────────────────────────────────────────────────────────
 def draw(bgr, cnt, banner, banner_ts):
     h, w  = bgr.shape[:2]
-    out   = cv2.cvtColor(cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY), cv2.COLOR_GRAY2BGR)
+    out   = bgr.copy()
 
     # label buttons — bottom
     for label, name in LABELS.items():
@@ -83,11 +120,21 @@ def draw(bgr, cnt, banner, banner_ts):
 
 # ── main ──────────────────────────────────────────────────────────────────────
 def main():
+    parser = argparse.ArgumentParser(description="Collect eye-tracking training data")
+    parser.add_argument(
+        "--source",
+        choices=["backend", "pi"],
+        default="backend",
+        help="Frame source: backend (default) uses /camera/stream, pi uses legacy TCP stream_client",
+    )
+    args = parser.parse_args()
+
     conn      = init_db()
+    print(f"[collect] writing to DB: {DB}")
     banner    = ""
     banner_ts = 0.0
 
-    for bgr in frames():
+    for bgr in get_frames(args.source):
         cnt = get_counts(conn)
 
         cv2.imshow("Voxen — collect", draw(bgr, cnt, banner, banner_ts))

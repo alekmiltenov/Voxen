@@ -69,6 +69,8 @@ export function InputControlProvider({ children }) {
   const dwellStartRef     = useRef(null);
   const dwellFiredRef     = useRef(false);
   const lastRepeatRef     = useRef(0);
+  const backCenterStartRef = useRef(null);  // For sustained center gaze = BACK
+  const backCenterFiredRef = useRef(false);
 
   // keep refs in sync
   useEffect(() => { modeRef.current = mode; }, [mode]);
@@ -208,7 +210,28 @@ export function InputControlProvider({ children }) {
             if (autoCenterDone.current) {
               const direction = classifyGaze(gaze.x, gaze.y, centerRef.current, yBiasRef.current);
               const now = Date.now();
-              if (direction !== "CENTER") {
+              
+              // ── CENTER GAZE: sustained for 2s fires BACK ──
+              if (direction === "CENTER") {
+                if (!backCenterStartRef.current) {
+                  backCenterStartRef.current = now;
+                  backCenterFiredRef.current = false;
+                }
+                if (!backCenterFiredRef.current && (now - backCenterStartRef.current) >= 2000) {
+                  backCenterFiredRef.current = true;
+                  console.log("[Eyes] CENTER held 2s → dispatching BACK");
+                  dispatch("BACK");
+                }
+                // Clear directional state
+                lastEyeCmdRef.current = null; dwellDirRef.current  = null;
+                dwellStartRef.current = null; dwellFiredRef.current = false;
+                lastRepeatRef.current = 0;
+              } else {
+                // Reset BACK timer when gaze moves away from CENTER
+                backCenterStartRef.current = null;
+                backCenterFiredRef.current = false;
+                
+                // ── DIRECTIONAL DWELL ──
                 if (dwellDirRef.current === direction) {
                   if (direction === "RIGHT") {
                     if (!dwellFiredRef.current && dwellStartRef.current &&
@@ -226,10 +249,6 @@ export function InputControlProvider({ children }) {
                   lastEyeCmdRef.current = direction; lastEyeCmdTimeRef.current = now;
                   dispatch(direction);
                 }
-              } else {
-                lastEyeCmdRef.current = null; dwellDirRef.current  = null;
-                dwellStartRef.current = null; dwellFiredRef.current = false;
-                lastRepeatRef.current = 0;
               }
             }
           } else {
@@ -282,6 +301,7 @@ export function InputControlProvider({ children }) {
     let stableDir   = null;
     let closedStart = null;
     let closedFired = false;
+    let backFired   = false;  // For long CLOSED = BACK
 
     function handlePrediction(data) {
       if (!data.ready) return;
@@ -294,7 +314,15 @@ export function InputControlProvider({ children }) {
       // ── CLOSED: start timer immediately, no debounce needed ──────────────
       if (dir === "CLOSED") {
         if (!closedStart) closedStart = now;
-        if (!closedFired && (now - closedStart) >= getClosedMs()) {
+        
+        // Long-hold (3s) fires BACK
+        if (!backFired && (now - closedStart) >= 3000) {
+          console.log("[CNN] CLOSED held 3s → dispatching BACK");
+          backFired = true;
+          dispatch("BACK");
+        }
+        // Short hold (< 500ms from release) fires SELECT
+        else if (!closedFired && (now - closedStart) >= getClosedMs()) {
           console.log("[CNN] CLOSED held → dispatching FORWARD");
           closedFired = true;
           dispatch("FORWARD");
@@ -303,7 +331,7 @@ export function InputControlProvider({ children }) {
         return;
       }
 
-      closedStart = null; closedFired = false;
+      closedStart = null; closedFired = false; backFired = false;
 
       // ── navigation directions: small debounce to filter jitter ────────────
       if (dir !== rawDir) { rawDir = dir; rawStart = now; }
