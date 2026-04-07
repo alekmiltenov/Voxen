@@ -189,9 +189,10 @@ const s = {
   },
   topBar: {
     position: "absolute", top: 28, left: 32, right: 32,
-    display: "flex", alignItems: "center", justifyContent: "space-between",
+    display: "flex", alignItems: "center", justifyContent: "center",
   },
   settingsBtn: {
+    position: "absolute", left: 0,
     display: "flex", alignItems: "center", justifyContent: "center",
     width: 36, height: 36, borderRadius: "50%", background: "transparent",
     border: "none", color: "rgba(255,255,255,0.2)", cursor: "pointer", padding: 0, transition: "color 0.2s ease",
@@ -201,6 +202,7 @@ const s = {
     margin: 0, letterSpacing: "0.18em", textTransform: "uppercase",
   },
   modeSwitch: {
+    position: "absolute", right: 0,
     display: "flex", gap: 4, background: "rgba(255,255,255,0.03)",
     borderRadius: 99, padding: 3, border: "1px solid rgba(255,255,255,0.08)",
   },
