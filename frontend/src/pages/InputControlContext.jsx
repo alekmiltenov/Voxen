@@ -1,11 +1,11 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
-import { io } from "socket.io-client";
 import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 import { getClosedMs } from "../utils/settings";
 
 // ── Server addresses ──────────────────────────────────────────────────────────
-const HEAD_SERVER = "http://10.237.97.5:5000";
-const NN_SERVER   = "http://localhost:8001";
+const BACKEND_SERVER = "http://localhost:8000";
+const HEAD_SERVER = BACKEND_SERVER;
+const NN_SERVER   = BACKEND_SERVER;
 
 // ── MediaPipe constants ───────────────────────────────────────────────────────
 const MODEL_URL          = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
@@ -155,7 +155,6 @@ export function InputControlProvider({ children }) {
 
     // Connect to WebSocket
     let ws;
-    let isConnected = false;
     let currentWsUrl = null;
     const commandDelay = commandDelayRef.current;
 
@@ -442,17 +441,16 @@ export function InputControlProvider({ children }) {
   const setCommandDelay = useCallback((v) => { commandDelayRef.current = v; }, []);
 
   // ════════════════════════════════════════════════════════════════════════
-  // CNN MODE — polls nn_server.py (Pi camera + PyTorch model)
+  // CNN MODE — reads predictions from backend /ws/predict
   // ════════════════════════════════════════════════════════════════════════
   useEffect(() => {
     if (mode !== "cnn") { setCnnReady(false); setGazeLabel("—"); return; }
 
-    console.log(`[CNN] starting — polling ${NN_SERVER}/predict every 100 ms`);
+    console.log(`[CNN] starting — backend source ${NN_SERVER}/predict`);
 
     let rawDir      = null;
     let rawStart    = 0;
     let stableDir   = null;
-    let isConnected = false;
 
     function handlePrediction(data) {
       if (!data.ready) return;
@@ -519,10 +517,16 @@ export function InputControlProvider({ children }) {
     }
 
     let ws;
+    let isConnected = false;
     function connect() {
-      if (isConnected) return; // Prevent duplicate connections
-      console.log("[CNN] connecting to ws://localhost:8001/ws/predict");
-      ws = new WebSocket("ws://localhost:8001/ws/predict");
+      if (isConnected) return;
+
+      const testWsUrl = "ws://localhost:8001/ws/predict";
+      const backendWsUrl = NN_SERVER.replace("http", "ws") + "/ws/predict";
+      const wsUrl = window.location.hostname === "localhost" ? testWsUrl : backendWsUrl;
+
+      console.log("[CNN] connecting to " + wsUrl);
+      ws = new WebSocket(wsUrl);
       ws.onopen    = () => {
         isConnected = true;
         console.log("[CNN] WebSocket connected");

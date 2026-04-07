@@ -1,3 +1,6 @@
+
+#THIS CODE IS NOT USED IN THE FINAL PRODUCT. It was an early prototype 
+
 from flask import Flask, request, jsonify
 from flask_socketio import SocketIO
 from flask_cors import CORS

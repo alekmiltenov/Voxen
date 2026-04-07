@@ -6,21 +6,50 @@
 
 ## 📋 Executive Summary
 
-Significant progress has been made on the **unified input control architecture**. The system now supports three independent input modes (HEAD, MediaPipe/Eyes, CNN) with a single consistent interface, comprehensive testing infrastructure, and improved customization options. The codebase has been refactored for maintainability and extensibility.
+Significant progress has been made on the **unified input control architecture**. The system now supports three independent input modes (HEAD, MediaPipe/Eyes, CNN) with a single consistent frontend interaction model, test infrastructure, and improved customization options.
+
+On the backend side, the core real-time pipeline has been refactored into FastAPI so the ESP32-CAM is now the primary CNN input source via WebSocket ingest.
 
 ---
 
 ## 🔧 What Has Been Implemented
 
-### 1. **ESP32-CAM Integration** ✅
-- **Status:** Connected and streaming
-- **Implementation:** Live camera feed from ESP32-CAM → Backend processing → Frontend display
-- **Features:**
-  - Real-time video streaming to the system
-  - Connected to CNN model for eye gaze prediction
-  - WebSocket-based real-time communication
+### 1. **XIAO ESP32S3 Sense (ESP32-CAM) Integration** ✅
+- **Status:** Connected, streaming, and integrated into FastAPI
+- **Implementation path:**
+  - ESP32 sends metadata + binary JPEG frames to `ws://<backend>:8000/ws/esp32/camera`
+  - Backend ingests frames with a latest-frame strategy (no queue backlog)
+  - Worker thread performs decode → optional rotation → grayscale resize (64x64) → CNN inference
+  - Stable predictions are published to `/ws/predict` and `/predict`
+  - Preview stream available via `/camera/stream`
+- **Why this matters:**
+  - Removed Raspberry Pi stream dependency from active inference path
+  - Reduced latency and improved robustness under variable frame timing
+  - Kept frontend integration surface simple (`/ws/predict`)
 
-⚠️ **Important Note:** The CNN model is **not properly trained yet**, resulting in poor prediction accuracy. For detailed information about CNN model training, dataset collection, and optimization strategies, please open a separate chat with the conversation starter "ESP32-CAM & CNN Integration Details".
+#### CNN Context (Current State)
+- CNN classes are fixed to: `LEFT`, `RIGHT`, `UP`, `DOWN`, `CLOSED`.
+- Current issue is **model quality/domain mismatch**, not transport.
+- Main root causes identified:
+  - legacy mixed data (older Pi distribution vs ESP32-CAM distribution)
+  - hand-held camera angle variability during collection
+  - no explicit CENTER class (neutral state handled as low-confidence/none)
+- Stabilization exists backend-side (window + confidence gate), but it cannot fix biased training data.
+
+⚠️ **Important Note:** CNN pipeline is operational, but prediction accuracy remains limited until ESP32-specific balanced dataset collection + retraining is completed.
+
+#### Backend Contribution Details (Completed)
+- Added ESP32 camera ingest WebSocket endpoint: `/ws/esp32/camera`
+- Added latest-frame ingestion pattern (overwrite old frame, process freshest frame)
+- Added inference worker separation from ingest (non-blocking receive path)
+- Added timing metadata propagation (capture/receive/infer timestamps)
+- Added stable prediction layer (windowed smoothing + confidence threshold)
+- Added stale-reset behavior to avoid sticky wrong labels
+- Added live diagnostics:
+  - `/predict/raw` (raw model output)
+  - `/debug/cnn` (live debug page with stable/raw + preview)
+- Added merged head-control backend endpoints in FastAPI:
+  - `/head/data`, `/head/settings`, `/ws/head`
 
 ---
 
@@ -156,14 +185,14 @@ frontend/
 ### Backend Architecture
 ```
 Interface/
-├── server.py                            ← Main API server
-├── eyetracking.py                       ← CNN integration
+├── server.py                            ← Main FastAPI server (camera ingest + CNN + head)
+├── eyetracking.py                       ← Legacy / older experiments
 └── ...
 
 eye_tracking/
 ├── model.pt                             ← Trained CNN weights
-├── nn_server.py                         ← WebSocket server for predictions
-├── collect.py                           ← Dataset collection
+├── nn_server.py                         ← Legacy server (not active in unified backend path)
+├── collect.py                           ← Dataset collection (now supports backend /camera/stream)
 └── ...
 
 Action_Space/
@@ -191,17 +220,17 @@ Action_Space/
 
 ---
 
-### 2. **Accelerometer Integration in ESP32** ❌
+### 2. **Accelerometer Integration in ESP32 Firmware** ❌
 - [ ] Firmware code for accelerometer readings
 - [ ] Calibration and threshold tuning
 - [ ] Sensor fusion (if combining multiple sensors)
 - [ ] Power optimization for continuous polling
 
-**Note:** The HEAD control system is fully implemented on the frontend side. Backend ESP32 firmware for accelerometer is needed to complete this feature.
+**Note:** Backend support for accelerometer is already present in FastAPI (`/head/data`, `/ws/head`). The missing piece is stable ESP32 firmware wiring and calibration.
 
 ---
 
-### 2. **Keyboard Controllable Interface** ❌
+### 3. **Keyboard Controllable Interface** ❌
 - [ ] Keyboard event handlers
 - [ ] Remappable key bindings
 - [ ] Keyboard accessibility mode
@@ -211,7 +240,7 @@ Action_Space/
 
 ---
 
-### 3. **AI Chat Controllable Interface** ❌
+### 4. **AI Chat Controllable Interface** ❌
 - **Status:** Backend service exists (`Action_Space/ai_chat_service.py`)
 - **Missing:**
   - [ ] Integration with InputControlContext
@@ -224,7 +253,7 @@ Action_Space/
 
 ---
 
-### 4. **Frontend Styling (UI/UX Polish)** ❌
+### 5. **Frontend Styling (UI/UX Polish)** ❌
 - [ ] Visual consistency across all pages
 - [ ] Dark/Light theme support
 - [ ] Responsive design for different screen sizes
@@ -236,7 +265,7 @@ Action_Space/
 
 ---
 
-### 5. **Catalog of Hardcoded Phrases** ❌
+### 6. **Catalog of Hardcoded Phrases** ❌
 - [ ] Phrase database/file
 - [ ] Categories (greetings, responses, needs, etc.)
 - [ ] Quick-access phrase list UI
@@ -257,13 +286,13 @@ Action_Space/
 │  ┌─ InputControlContext (Hub) ────────┐ │
 │  │                                    │ │
 │  ├─ HEAD Mode ───► WS :8002/ws/head  │ │
-│  │ (test server or backend)           │ │
+│  │ (dev test server)                  │ │
 │  │                                    │ │
 │  ├─ Eyes Mode ───► Local video       │ │
 │  │ (MediaPipe, browser-based)         │ │
 │  │                                    │ │
-│  ├─ CNN Mode ────► WS :8001/ws/predict
-│  │ (test server or backend)           │ │
+│  ├─ CNN Mode ────► WS :8001/ws/predict│ │
+│  │ (dev test server)                  │ │
 │  │                                    │ │
 │  └────────────────────────────────────┘ │
 │                                         │
@@ -273,8 +302,8 @@ Action_Space/
          │                  │
          ▼                  ▼
     ┌──────────────────────────────┐
-    │    BACKEND (Python)          │
-    │ http://10.237.97.128:5000    │
+    │    BACKEND (FastAPI)         │
+    │    http://<host>:8000        │
     │                              │
     │ ┌─────────────────────────┐  │
     │ │ HEAD Control Handler    │  │
@@ -284,8 +313,11 @@ Action_Space/
     │                              │
     │ ┌─────────────────────────┐  │
     │ │ CNN Prediction Service  │  │
+    │ │ WS /ws/esp32/camera     │  │
     │ │ WS /ws/predict          │  │
-    │ │ (via nn_server.py)      │  │
+    │ │ GET /predict            │  │
+    │ │ GET /predict/raw        │  │
+    │ │ GET /debug/cnn          │  │
     │ └─────────────────────────┘  │
     │                              │
     │ ┌─────────────────────────┐  │
@@ -298,12 +330,12 @@ Action_Space/
     ┌──────────────────────────────┐
     │    HARDWARE                  │
     │ ┌─────────────────────────┐  │
-    │ │ ESP32-CAM               │  │
-    │ │ (camera + CNN model)    │  │
+    │ │ XIAO ESP32S3 Sense      │  │
+    │ │ (camera stream source)  │  │
     │ └─────────────────────────┘  │
     │ ┌─────────────────────────┐  │
-    │ │ ESP32 (pending)         │  │
-    │ │ (accelerometer)         │  │
+    │ │ ESP32 + Accelerometer   │  │
+    │ │ (firmware pending tune) │  │
     │ └─────────────────────────┘  │
     └──────────────────────────────┘
 ```
@@ -313,9 +345,15 @@ Action_Space/
 ## 🧪 Testing & Verification
 
 ### Manual Testing Procedure
-1. **Start all servers:**
+1. **Start backend API:**
+  ```bash
+  cd Interface
+  uvicorn server:app --host 0.0.0.0 --port 8000
+  ```
+
+2. **Start frontend + test servers (development mode):**
    ```bash
-   # Terminal 1: Frontend
+  # Terminal 1: Frontend
    cd frontend
    npx vite --port 5173
 
@@ -328,12 +366,12 @@ Action_Space/
    node head-test-server.js
    ```
 
-2. **Access UI:**
+3. **Access UI:**
    - Frontend: http://localhost:5173
    - CNN Controller: http://localhost:8001
    - HEAD Controller: http://localhost:8002
 
-3. **Test Scenarios:**
+4. **Test Scenarios:**
    - Click buttons on test controller UIs
    - Verify commands appear in frontend console
    - Check WebSocket connections in browser DevTools
@@ -344,7 +382,7 @@ Action_Space/
 - ✅ CORS errors fixed (settings fetch disabled in dev mode)
 - ✅ WebSocket connection failures fixed (proper upgrade handler)
 - ✅ Command double-clicks fixed (useRef for throttling)
-- ⚠️ CNN predictions unreliable (model not trained)
+- ⚠️ CNN predictions still unreliable in some sessions (dataset quality/domain consistency still in progress)
 
 ---
 
@@ -382,9 +420,19 @@ Action_Space/
    - Test voice/text input flow
 
 ### Medium Priority
-4. Frontend styling and UI polish
-5. Keyboard input mode
-6. Hardcoded phrase catalog
+4. **Design & 3D Print Headband Mount** 🎧
+   - Create 3D model for headband holding XIAO ESP32S3 Sense + accelerometer
+   - Design should be:
+     - Lightweight and comfortable for extended wear
+     - Secure mount for sensor alignment
+     - Cable routing for accelerometer connection
+   - Reference case for XIAO ESP32S3 Sense: https://www.hackster.io/tech_nickk/the-smallest-diy-camera-using-xiao-esp32s3-sense-0f7859
+   - Export model for 3D printing (STL format)
+   - Test printed prototype
+
+5. Frontend styling and UI polish
+6. Keyboard input mode
+7. Hardcoded phrase catalog
 
 ### Low Priority
 7. Advanced features (logging, analytics, etc.)
