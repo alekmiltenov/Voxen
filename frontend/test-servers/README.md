@@ -28,13 +28,13 @@ node cnn-test-server.js
 
 1. Frontend automatically connects to `ws://localhost:8001/ws/predict` when in development mode
 2. Open http://localhost:8001 in browser for control UI
-3. Click buttons to simulate eye movements (UP, DOWN, LEFT, RIGHT, CLOSED)
+3. Click buttons to simulate eye movements (UP, DOWN, LEFT, RIGHT, CENTER)
 4. Frontend receives predictions via WebSocket in real-time
 
 ### Features
 
 - Direction buttons (↑ ↓ ← →)
-- Closed eye simulator (blink detection)
+- Center/neutral gaze simulator
 - Manual confidence slider (0-1)
 - Real-time WebSocket broadcast (60ms intervals)
 
@@ -120,8 +120,8 @@ Settings fetches are also skipped in dev mode to avoid CORS errors with network 
 ```javascript
 // WebSocket message format
 {
-  "gaze": "UP" | "DOWN" | "LEFT" | "RIGHT" | null,
-  "closed": true | false,
+  "ready": true,
+  "name": "UP" | "DOWN" | "LEFT" | "RIGHT" | "CENTER",
   "confidence": 0.0 - 1.0
 }
 ```

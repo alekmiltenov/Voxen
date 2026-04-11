@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useInputControl } from "./InputControlContext";
-import { getClosedMs, saveSettings } from "../utils/settings";
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -34,8 +33,9 @@ export default function Settings() {
   });
   const [selectionMethod, setSelectionMethod] = useState(() => {
     try {
-      const saved = localStorage.getItem("eyeSelectionMethod");
-      return saved || "right";
+      const saved = (localStorage.getItem("eyeSelectionMethod") || "right").toLowerCase();
+      if (saved === "closed" || saved === "center") return "right";
+      return ["left", "right", "up", "down"].includes(saved) ? saved : "right";
     } catch { return "right"; }
   });
   const [selectionDwell, setSelectionDwell] = useState(() => {
@@ -44,7 +44,6 @@ export default function Settings() {
       return saved ? parseInt(saved) : 1500;
     } catch { return 1500; }
   });
-  const [closedMs,   setClosedMs]   = useState(() => getClosedMs());
   const [mediapiaCenterMode, setMediapiaCenterMode] = useState(() => 
     localStorage.getItem("mediapiapeCenterMode") || "disabled"
   );
@@ -89,13 +88,6 @@ export default function Settings() {
       localStorage.setItem("eyeSelectionDwell", selectionDwell.toString());
     } catch {}
   }, [selectionDwell]);
-
-  // Persist closed eyes duration for CNN
-  useEffect(() => {
-    try {
-      localStorage.setItem("closedMs", closedMs.toString());
-    } catch {}
-  }, [closedMs]);
 
   // Persist HEAD selection method
   useEffect(() => {
@@ -297,7 +289,6 @@ export default function Settings() {
                   <option value="left">LEFT (hold left)</option>
                   <option value="up">UP (hold up)</option>
                   <option value="down">DOWN (hold down)</option>
-                  <option value="center">CENTER (hold center)</option>
                 </select>
               </div>
 
@@ -372,36 +363,18 @@ export default function Settings() {
                 <label style={s.selectLabel}>Select using:</label>
                 <select value={selectionMethod} onChange={e => setSelectionMethod(e.target.value)}
                   style={s.selectInput}>
-                  <option value="closed">CLOSED (close eyes)</option>
+                  <option value="right">RIGHT (hold right)</option>
+                  <option value="left">LEFT (hold left)</option>
                   <option value="up">UP (hold up)</option>
                   <option value="down">DOWN (hold down)</option>
-                  <option value="left">LEFT (hold left)</option>
-                  <option value="right">RIGHT (hold right)</option>
                 </select>
               </div>
 
-              {selectionMethod === "closed" && (
-                <>
-                  <Divider />
-                  <SliderRow
-                    label="Close-eyes select duration"
-                    hint="How long to keep eyes CLOSED to confirm a selection"
-                    value={closedMs} display={`${closedMs} ms`}
-                    min={500} max={3000} step={100} accent="#22c55e"
-                    onChange={v => setClosedMs(v)}
-                  />
-                </>
-              )}
-
-              {selectionMethod !== "closed" && (
-                <>
-                  <Divider />
-                  <SliderRow label="Selection dwell time" hint="How long to hold the gaze direction to select"
-                    value={selectionDwell} display={`${selectionDwell} ms`}
-                    min={500} max={3000} step={100} accent="#22c55e"
-                    onChange={v => setSelectionDwell(v)} />
-                </>
-              )}
+              <Divider />
+              <SliderRow label="Selection dwell time" hint="How long to hold the gaze direction to select"
+                value={selectionDwell} display={`${selectionDwell} ms`}
+                min={500} max={3000} step={100} accent="#22c55e"
+                onChange={v => setSelectionDwell(v)} />
 
               <Divider />
 
@@ -411,7 +384,7 @@ export default function Settings() {
                 onChange={v => { setLocalCommandDelay(v); setCommandDelay(v); }} />
 
               <p style={{ fontSize: 12, color: "rgba(255,255,255,0.22)", margin: "8px 0 0 0" }}>
-                {selectionMethod === "closed" ? "Close eyes for the duration above to select" : "Hold your gaze in the selected direction for the duration above to confirm"}
+                Hold your gaze in the selected direction for the duration above to confirm
               </p>
             </section>
           </>

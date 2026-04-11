@@ -213,6 +213,22 @@ def _push_prediction(pred: dict):
             pass
 
 
+def _normalize_cnn_prediction(pred: dict) -> dict:
+    """
+    Compatibility normalization for gaze labels.
+
+    Legacy outputs that still emit CLOSED are mapped to CENTER.
+    Label index remains 1..5 where class 5 is CENTER.
+    """
+    out = dict(pred or {})
+    name = str(out.get("name", "") or "").upper()
+    if name == "CLOSED":
+        out["name"] = "CENTER"
+        if int(out.get("label", 0) or 0) == 0:
+            out["label"] = 5
+    return out
+
+
 def _update_stable_prediction(raw_pred: dict) -> Optional[dict]:
     """
     Update smoothing window with raw predictions and return stable output.
@@ -273,6 +289,8 @@ def _publish_cnn_prediction(raw_pred: dict):
     """Store raw prediction internally, expose only stabilized prediction externally."""
     global _last_stable_update_ms
 
+    raw_pred = _normalize_cnn_prediction(raw_pred)
+
     stable = None
     stale_flip = None
     now_ms = int(time.time() * 1000)
@@ -305,7 +323,7 @@ def _cnn_inference_loop():
     global _latest_frame
     try:
         import torch
-        from eye_tracking import EyeTrackCNN, LABELS, IMG_H, IMG_W
+        from eye_tracking import EyeTrackCNN, LABELS, preprocess_eye_frame
         from stream_client import frames
 
         model_path = os.path.join(_ROOT, "eye_tracking", "model.pt")
@@ -323,8 +341,7 @@ def _cnn_inference_loop():
             _, jpg = cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, 60])
             _latest_frame = jpg.tobytes()
 
-            gray   = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-            gray64 = cv2.resize(gray, (IMG_W, IMG_H))
+            gray64 = preprocess_eye_frame(bgr)
             t = (torch.tensor(gray64 / 255.0, dtype=torch.float32)
                       .unsqueeze(0).unsqueeze(0).to(device))
             with torch.no_grad():
@@ -347,7 +364,7 @@ def _cnn_esp32_inference_loop():
     global _latest_frame
     try:
         import torch
-        from eye_tracking import EyeTrackCNN, LABELS, IMG_H, IMG_W
+        from eye_tracking import EyeTrackCNN, LABELS, preprocess_eye_frame
 
         model_path = os.path.join(_ROOT, "eye_tracking", "model.pt")
         if not os.path.exists(model_path):
@@ -378,8 +395,7 @@ def _cnn_esp32_inference_loop():
             _, jpg = cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, 60])
             _latest_frame = jpg.tobytes()
 
-            gray   = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-            gray64 = cv2.resize(gray, (IMG_W, IMG_H))
+            gray64 = preprocess_eye_frame(bgr)
 
             t0 = time.perf_counter()
             t = (torch.tensor(gray64 / 255.0, dtype=torch.float32)
@@ -664,6 +680,28 @@ async def esp32_camera_ws(websocket: WebSocket):
     finally:
         with _esp32_state_lock:
             _esp32_camera_state["connected"] = False
+
+
+@app.websocket("/ws/esp32/preview")
+async def esp32_preview_ws(websocket: WebSocket):
+    """
+    ESP32 camera preview stream (for training data collection).
+    
+    Streams latest frame via WebSocket with low latency (no buffering).
+    Clients receive raw JPEG bytes at ~30fps.
+    """
+    global _latest_frame
+    await websocket.accept()
+    
+    try:
+        while True:
+            # Send latest frame if available
+            if _latest_frame:
+                await websocket.send_bytes(_latest_frame)
+            # ~30fps frame rate
+            await asyncio.sleep(0.033)
+    except (WebSocketDisconnect, RuntimeError):
+        pass
 
 
 @app.post("/head/data")

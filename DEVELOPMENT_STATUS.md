@@ -28,12 +28,12 @@ On the backend side, the core real-time pipeline has been refactored into FastAP
   - Kept frontend integration surface simple (`/ws/predict`)
 
 #### CNN Context (Current State)
-- CNN classes are fixed to: `LEFT`, `RIGHT`, `UP`, `DOWN`, `CLOSED`.
+- CNN classes are fixed to: `LEFT`, `RIGHT`, `UP`, `DOWN`, `CENTER`.
 - Current issue is **model quality/domain mismatch**, not transport.
 - Main root causes identified:
   - legacy mixed data (older Pi distribution vs ESP32-CAM distribution)
   - hand-held camera angle variability during collection
-  - no explicit CENTER class (neutral state handled as low-confidence/none)
+  - neutral handling now uses explicit `CENTER` class
 - Stabilization exists backend-side (window + confidence gate), but it cannot fix biased training data.
 
 ⚠️ **Important Note:** CNN pipeline is operational, but prediction accuracy remains limited until ESP32-specific balanced dataset collection + retraining is completed.
@@ -88,7 +88,8 @@ Major refactoring to support multiple input modes with a single codebase:
 **C) CNN (Eye Tracking via ESP32-CAM)**
 - Transport: WebSocket `/ws/predict`
 - Navigation: UP/DOWN/LEFT/RIGHT predictions
-- Selection: CLOSED + dwell timer
+- Selection: directional dwell (LEFT/RIGHT/UP/DOWN)
+- Neutral: CENTER (does not trigger actions)
 - Implemented in: `InputControlContext.jsx` (lines 290+)
 - Features:
   - Command delay throttling (via `cnnLastCmdTimeRef`)
@@ -127,7 +128,7 @@ Created `/frontend/test-servers/` directory with two development test servers:
 - **Protocol:** WebSocket `/ws/predict`
 - **Features:**
   - Direction buttons (↑ ↓ ← →)
-  - Closed eye simulator (blink detection)
+  - Center/neutral simulator
   - Manual confidence slider
   - Real-time broadcast (60ms intervals)
 - **Usage:** `cd frontend/test-servers && node cnn-test-server.js`

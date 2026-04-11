@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
 import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
-import { getClosedMs } from "../utils/settings";
 
 // ── Server addresses ──────────────────────────────────────────────────────────
 const BACKEND_SERVER = "http://localhost:8000";
@@ -36,7 +35,13 @@ const DEBOUNCE_MS    = 80;
 
 // ── Gesture customization (read from localStorage) ───────────────────────────
 const getSelectionMethod = () => {
-  try { return localStorage.getItem("eyeSelectionMethod") || "right"; } catch { return "right"; }
+  try {
+    const saved = (localStorage.getItem("eyeSelectionMethod") || "right").toLowerCase();
+    // Legacy compatibility: CLOSED/CENTER selection modes are now treated as RIGHT.
+    if (saved === "closed" || saved === "center") return "right";
+    if (["left", "right", "up", "down"].includes(saved)) return saved;
+    return "right";
+  } catch { return "right"; }
 };
 
 const getHeadSelectionMethod = () => {
@@ -109,8 +114,6 @@ export function InputControlProvider({ children }) {
   const dwellFiredRef     = useRef(false);
   const selectionDwellStartRef = useRef(null); // Track dwell for configured selection method
   const selectionDwellFiredRef = useRef(false); // Track if selection dwell fired
-  const cnnClosedStartRef = useRef(null);     // Track closed eyes dwell for CNN
-  const cnnClosedFiredRef = useRef(false);    // Track if CNN closed eyes fired
   const cnnSelectionDwellStartRef = useRef(null); // Track direction dwell for CNN
   const cnnSelectionDwellFiredRef = useRef(false); // Track if CNN direction dwell fired
   const cnnLastCmdTimeRef = useRef(0);        // Track CNN command delay (CRITICAL FIX)
@@ -455,32 +458,20 @@ export function InputControlProvider({ children }) {
     function handlePrediction(data) {
       if (!data.ready) return;
       setCnnReady(true);
-      setGazeLabel(data.name);
+      const rawName = String(data.name || "").toUpperCase();
+      // Legacy compatibility: old models may still emit CLOSED.
+      const normalizedName = rawName === "CLOSED" ? "CENTER" : rawName;
+      setGazeLabel(normalizedName || "—");
 
       const now = Date.now();
-      const dir = data.confidence >= CONF_THRESHOLD ? data.name : null;
-      const selectionMethod = getSelectionMethod(); // "closed"/right/left/up/down
+      // CENTER is neutral: never actionable.
+      const dir = data.confidence >= CONF_THRESHOLD && normalizedName !== "CENTER" ? normalizedName : null;
+      const selectionMethod = getSelectionMethod(); // right/left/up/down
       const selectionDwell = getSelectionDwell();   // 500-3000ms
       const commandDelay = commandDelayRef.current || 200;
 
-      // ── CLOSED or direction-based selection ──────────────────────────────
-      if (selectionMethod.toUpperCase() === "CLOSED") {
-        // CLOSED eyes for selection
-        if (dir === "CLOSED") {
-          if (!cnnClosedStartRef.current) {
-            cnnClosedStartRef.current = now;
-            cnnClosedFiredRef.current = false;
-          } else if (!cnnClosedFiredRef.current && (now - cnnClosedStartRef.current) >= getClosedMs()) {
-            console.log("[CNN] CLOSED held → dispatching FORWARD");
-            cnnClosedFiredRef.current = true;
-            dispatch("FORWARD");
-          }
-          rawDir = null; stableDir = null;
-          return;
-        }
-        cnnClosedStartRef.current = null;
-        cnnClosedFiredRef.current = false;
-      } else if (dir === selectionMethod.toUpperCase()) {
+      // ── direction-based selection only (CENTER is neutral) ───────────────
+      if (dir === selectionMethod.toUpperCase()) {
         // Direction-based selection with dwell
         if (!cnnSelectionDwellStartRef.current) {
           cnnSelectionDwellStartRef.current = now;
@@ -496,6 +487,13 @@ export function InputControlProvider({ children }) {
         // Not the selection direction - reset dwell
         cnnSelectionDwellStartRef.current = null;
         cnnSelectionDwellFiredRef.current = false;
+      }
+
+      // Neutral/low-confidence state resets navigation hold state.
+      if (dir === null) {
+        rawDir = null;
+        stableDir = null;
+        return;
       }
 
       // ── navigation directions: small debounce + command delay ──────────────

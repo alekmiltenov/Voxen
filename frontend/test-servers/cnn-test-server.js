@@ -236,7 +236,7 @@ function getControlUI() {
         <button class="gaze-btn" data-gaze="DOWN">↓ DOWN</button>
         <button></button>
       </div>
-      <button class="gaze-btn" data-gaze="CLOSED" style="width: 100%; grid-column: 1 / -1;">😴 CLOSED (eyes closed)</button>
+      <button class="gaze-btn" data-gaze="CENTER" style="width: 100%; grid-column: 1 / -1;">● CENTER (neutral)</button>
     </div>
 
     <div class="section">

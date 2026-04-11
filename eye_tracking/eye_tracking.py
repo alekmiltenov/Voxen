@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import cv2
 
 # 5 gaze states
 NUM_CLASSES = 5
@@ -10,16 +11,39 @@ LABELS = {
     2: "RIGHT",
     3: "UP",
     4: "DOWN",
-    5: "CLOSED",
+    5: "CENTER",
 }
 
 IMG_H = IMG_W = 64
 
 
+def preprocess_eye_frame(frame: np.ndarray) -> np.ndarray:
+    """
+    Shared preprocessing for eye-tracking pipeline.
+
+    Steps (kept identical across collection, training, inference):
+      1) grayscale conversion
+      2) histogram equalization
+      3) resize to model input size
+    Returns uint8 image of shape (IMG_H, IMG_W).
+    """
+    if frame is None:
+        raise ValueError("preprocess_eye_frame received None")
+
+    if frame.ndim == 3:
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = frame
+
+    eq = cv2.equalizeHist(gray)
+    out = cv2.resize(eq, (IMG_W, IMG_H))
+    return out
+
+
 class EyeTrackCNN(nn.Module):
     """
     Input:  (B, 1, 64, 64)  grayscale eye crop, normalised [0, 1]
-    Output: (B, 5)           softmax probabilities over LEFT/RIGHT/UP/DOWN/CLOSED
+    Output: (B, 5)           softmax probabilities over LEFT/RIGHT/UP/DOWN/CENTER
     """
 
     def __init__(self):

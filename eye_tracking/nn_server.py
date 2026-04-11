@@ -22,7 +22,7 @@ from flask_cors import CORS
 
 sys.path.insert(0, os.path.dirname(__file__))
 from stream_client import frames
-from eye_tracking import EyeTrackCNN, LABELS, IMG_H, IMG_W
+from eye_tracking import EyeTrackCNN, LABELS, preprocess_eye_frame
 
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "model.pt")
 DEVICE     = "cuda" if torch.cuda.is_available() else "cpu"
@@ -47,8 +47,7 @@ def inference_loop():
     print(f"[nn_server] model loaded ({DEVICE})")
 
     for bgr in frames():
-        gray   = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-        gray64 = cv2.resize(gray, (IMG_W, IMG_H))
+        gray64 = preprocess_eye_frame(bgr)
         t = (torch.tensor(gray64 / 255.0, dtype=torch.float32)
                   .unsqueeze(0).unsqueeze(0).to(DEVICE))
 
