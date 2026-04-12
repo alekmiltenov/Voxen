@@ -153,8 +153,6 @@ function CnnIndicator({ cnnDebug }) {
         <span>Select: {selectionMethod}</span>
         <span>{statusText}</span>
       </div>
-
-      <div style={{ marginTop: 6, minHeight: 14, fontSize: 10, color: "#c4b5fd", letterSpacing: "0.03em" }} />
     </div>
   );
 }

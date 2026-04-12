@@ -154,7 +154,11 @@ export function InputControlProvider({ children }) {
   // ── Register / unregister page handlers ──────────────────────────────────
   const register   = useCallback((fn) => { handlerRef.current = fn; }, []);
   const unregister = useCallback(()   => { handlerRef.current = null; }, []);
-  const dispatch   = useCallback((cmd) => { if (handlerRef.current && cmd) handlerRef.current(cmd); }, []);
+  const dispatch   = useCallback((cmd) => {
+    // Safety guard: never dispatch commands when control mode is Off.
+    if (modeRef.current === "off") return;
+    if (handlerRef.current && cmd) handlerRef.current(cmd);
+  }, []);
 
   // ════════════════════════════════════════════════════════════════════════
   // HEAD CONTROL (ESP32 via native WebSocket)
