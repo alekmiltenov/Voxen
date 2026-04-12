@@ -1,6 +1,37 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useInputControl } from "./InputControlContext";
+import { apiGet, apiPost } from "../api";
+
+const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+
+function antiJitterToBackendSettings(level) {
+  const t = clamp(Number(level) || 0, 0, 50) / 50;
+  return {
+    // Lower level = almost raw predictions. Higher level = smoother / more stable.
+    stable_window_size: Math.round(lerp(3, 7, t)),
+    min_confidence: Number(lerp(0.30, 0.62, t).toFixed(2)),
+    low_conf_reset_frames: Math.round(lerp(1, 8, t)),
+    stale_timeout_ms: Math.round(lerp(300, 1500, t)),
+  };
+}
+
+function backendSettingsToAntiJitter(settings) {
+  const w = clamp((Number(settings?.stable_window_size) - 3) / (7 - 3), 0, 1);
+  const c = clamp((Number(settings?.min_confidence) - 0.30) / (0.62 - 0.30), 0, 1);
+  const r = clamp((Number(settings?.low_conf_reset_frames) - 1) / (8 - 1), 0, 1);
+  const s = clamp((Number(settings?.stale_timeout_ms) - 300) / (1500 - 300), 0, 1);
+  return Math.round(((w + c + r + s) / 4) * 50);
+}
+
+function antiJitterLabel(level) {
+  const v = Number(level) || 0;
+  if (v < 12.5) return "Raw / ultra fast";
+  if (v < 25) return "Responsive";
+  if (v < 37.5) return "Balanced";
+  return "Very stable";
+}
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -28,8 +59,8 @@ export default function Settings() {
   const [localCommandDelay, setLocalCommandDelay] = useState(() => {
     try {
       const saved = localStorage.getItem("eyeCommandDelay");
-      return saved ? parseFloat(saved) : 200;
-    } catch { return 200; }
+      return saved ? parseFloat(saved) : 350;
+    } catch { return 350; }
   });
   const [selectionMethod, setSelectionMethod] = useState(() => {
     try {
@@ -53,6 +84,14 @@ export default function Settings() {
       return saved || "forward";
     } catch { return "forward"; }
   });
+  const [cnnAntiJitterLevel, setCnnAntiJitterLevel] = useState(() => {
+    try {
+      const saved = localStorage.getItem("cnnAntiJitterLevel");
+      return saved ? clamp(parseInt(saved, 10), 0, 50) : 20;
+    } catch { return 20; }
+  });
+  const [cnnSettingsStatus, setCnnSettingsStatus] = useState("");
+  const [cnnSettingsLoaded, setCnnSettingsLoaded] = useState(false);
 
   // Persist Y-bias to localStorage whenever it changes
   useEffect(() => {
@@ -96,12 +135,37 @@ export default function Settings() {
     } catch {}
   }, [headSelectionMethod]);
 
+  // Persist unified anti-jitter level
+  useEffect(() => {
+    try {
+      localStorage.setItem("cnnAntiJitterLevel", String(Math.round(cnnAntiJitterLevel)));
+    } catch {}
+  }, [cnnAntiJitterLevel]);
+
   useEffect(() => {
     register((cmd) => {
       if (cmd === "BACK") navigate("/");
     });
     return () => unregister();
   }, [mode]);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const data = await apiGet("/cnn/stabilization-settings");
+        if (!alive) return;
+        setCnnAntiJitterLevel(backendSettingsToAntiJitter(data));
+        setCnnSettingsLoaded(true);
+      } catch {
+        if (!alive) return;
+        setCnnSettingsStatus("Failed to load backend anti-jitter settings");
+        setCnnSettingsLoaded(true);
+      }
+    })();
+
+    return () => { alive = false; };
+  }, []);
 
   const handleSensor = (key, value) =>
     updateSensorSettings({ ...sensorSettings, [key]: value });
@@ -110,6 +174,24 @@ export default function Settings() {
     setMediapiaCenterMode(value);
     localStorage.setItem("mediapiapeCenterMode", value);
   };
+
+  useEffect(() => {
+    if (!cnnSettingsLoaded || mode !== "cnn") return;
+
+    setCnnSettingsStatus("Saving…");
+    const t = setTimeout(async () => {
+      try {
+        const payload = antiJitterToBackendSettings(cnnAntiJitterLevel);
+        await apiPost("/cnn/stabilization-settings", payload);
+        setCnnSettingsStatus("Saved");
+        setTimeout(() => setCnnSettingsStatus(""), 800);
+      } catch (e) {
+        setCnnSettingsStatus(e?.message || "Failed to save");
+      }
+    }, 300);
+
+    return () => clearTimeout(t);
+  }, [cnnAntiJitterLevel, cnnSettingsLoaded, mode]);
 
   return (
     <div style={s.page}>
@@ -149,7 +231,7 @@ export default function Settings() {
                 </div>
               </div>
               <div style={s.row}>
-                <label style={s.label}>Selection Command</label>
+                <ControlLabel text="Selection Command" help="Choose which head movement performs confirm/select." />
                 <select 
                   value={headSelectionMethod} 
                   onChange={(e) => setHeadSelectionMethod(e.target.value)}
@@ -172,6 +254,7 @@ export default function Settings() {
               <Divider />
               <SliderRow label="Hold Duration" hint="How long to hold selection command"
                 value={holdDuration} display={`${holdDuration} ms`}
+                help="Longer hold reduces accidental selects but feels slower."
                 min={200} max={1200} step={50} accent="#a78bfa" onChange={setHoldDuration} />
             </section>
 
@@ -185,16 +268,19 @@ export default function Settings() {
               </div>
               <SliderRow label="Responsiveness (alpha)" hint="Higher = faster reaction"
                 value={sensorSettings.alpha} display={sensorSettings.alpha.toFixed(2)}
+                help="How quickly head-control reacts to movement changes."
                 min={0.1} max={1.0} step={0.05} accent="#38bdf8"
                 onChange={v => handleSensor("alpha", v)} />
               <Divider />
               <SliderRow label="Sensitivity (threshold)" hint="Lower = triggers on smaller tilts"
                 value={sensorSettings.threshold} display={sensorSettings.threshold.toFixed(1)}
+                help="Minimum tilt strength needed before a command is recognized."
                 min={0.5} max={5.0} step={0.1} accent="#38bdf8"
                 onChange={v => handleSensor("threshold", v)} />
               <Divider />
               <SliderRow label="Deadzone" hint="Ignore micro-movements below this"
                 value={sensorSettings.deadzone} display={sensorSettings.deadzone.toFixed(1)}
+                help="Ignores tiny involuntary movements around neutral position."
                 min={0.1} max={2.0} step={0.1} accent="#38bdf8"
                 onChange={v => handleSensor("deadzone", v)} />
             </section>
@@ -242,6 +328,7 @@ export default function Settings() {
 
               <SliderRow label="Y-axis bias" hint="If stuck on DOWN drag left · if stuck on UP drag right"
                 value={localYBias} display={localYBias.toFixed(2)}
+                help="Offsets vertical gaze center to correct camera angle or posture."
                 min={-2.0} max={2.0} step={0.05} accent="#22c55e"
                 onChange={v => { setLocalYBias(v); setYBias(v); }} />
 
@@ -249,6 +336,7 @@ export default function Settings() {
 
               <SliderRow label="Center stability buffer" hint="Higher = smoother center, lower = more responsive"
                 value={localCenterBuffer} display={localCenterBuffer.toFixed(2)}
+                help="Expands neutral zone near center to reduce jitter and accidental moves."
                 min={0.0} max={1.5} step={0.01} accent="#22c55e"
                 onChange={v => { setLocalCenterBuffer(v); setCenterBuffer(v); }} />
 
@@ -256,7 +344,8 @@ export default function Settings() {
 
               <SliderRow label="Command delay" hint="Milliseconds between commands (higher = slower navigation)"
                 value={localCommandDelay} display={`${Math.round(localCommandDelay)} ms`}
-                min={50} max={500} step={50} accent="#22c55e"
+                help="Minimum time between repeated commands. Increase for easier control."
+                min={100} max={1200} step={50} accent="#22c55e"
                 onChange={v => { setLocalCommandDelay(v); setCommandDelay(v); }} />
 
               <Divider />
@@ -282,7 +371,7 @@ export default function Settings() {
                 </div>
               </div>
               <div style={s.selectRow}>
-                <label style={s.selectLabel}>Select using:</label>
+                <ControlLabel text="Select using" help="Choose which gaze direction acts as confirm/select after dwell." />
                 <select value={selectionMethod} onChange={e => setSelectionMethod(e.target.value)}
                   style={s.selectInput}>
                   <option value="right">RIGHT (hold right)</option>
@@ -296,6 +385,7 @@ export default function Settings() {
 
               <SliderRow label="Selection dwell time" hint="How long to hold the gaze direction to select"
                 value={selectionDwell} display={`${selectionDwell} ms`}
+                help="How long to keep looking at selection direction before confirm fires."
                 min={500} max={3000} step={100} accent="#22c55e"
                 onChange={v => setSelectionDwell(v)} />
 
@@ -360,7 +450,7 @@ export default function Settings() {
                 </div>
               </div>
               <div style={s.selectRow}>
-                <label style={s.selectLabel}>Select using:</label>
+                <ControlLabel text="Select using" help="Choose which CNN direction acts as confirm/select after dwell." />
                 <select value={selectionMethod} onChange={e => setSelectionMethod(e.target.value)}
                   style={s.selectInput}>
                   <option value="right">RIGHT (hold right)</option>
@@ -373,6 +463,7 @@ export default function Settings() {
               <Divider />
               <SliderRow label="Selection dwell time" hint="How long to hold the gaze direction to select"
                 value={selectionDwell} display={`${selectionDwell} ms`}
+                help="How long to keep CNN gaze on selection direction before confirm fires."
                 min={500} max={3000} step={100} accent="#22c55e"
                 onChange={v => setSelectionDwell(v)} />
 
@@ -380,12 +471,31 @@ export default function Settings() {
 
               <SliderRow label="Command delay" hint="Milliseconds between commands (higher = slower navigation)"
                 value={localCommandDelay} display={`${Math.round(localCommandDelay)} ms`}
-                min={50} max={500} step={50} accent="#22c55e"
+                help="Minimum time between repeated CNN navigation commands."
+                min={100} max={1200} step={50} accent="#22c55e"
                 onChange={v => { setLocalCommandDelay(v); setCommandDelay(v); }} />
 
               <p style={{ fontSize: 12, color: "rgba(255,255,255,0.22)", margin: "8px 0 0 0" }}>
-                Hold your gaze in the selected direction for the duration above to confirm
+                CNN smoothing comes mainly from backend stabilization; use command delay and selection dwell for feel.
               </p>
+            </section>
+
+            <section style={s.section}>
+              <div style={s.sectionHeader}>
+                <span style={s.sectionIcon}>🧩</span>
+                <div>
+                  <p style={s.sectionTitle}>Backend Anti-jitter</p>
+                  <p style={s.sectionSub}>One control for smoothness vs responsiveness</p>
+                </div>
+              </div>
+
+              <SliderRow label="Anti-jitter strength" hint="Left = faster reaction · Right = smoother output"
+                value={cnnAntiJitterLevel} display={`${Math.round(cnnAntiJitterLevel)} · ${antiJitterLabel(cnnAntiJitterLevel)}`}
+                help="Unified control for CNN smoothing. Increase if direction flickers. Decrease if it feels delayed."
+                min={0} max={50} step={1} accent="#22c55e"
+                onChange={v => setCnnAntiJitterLevel(v)} />
+
+              <p style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", margin: "8px 0 0 0" }}>{cnnSettingsStatus || "Auto-saves"}</p>
             </section>
           </>
         )}
@@ -406,12 +516,15 @@ const PRESETS = [
   { label: "Responsive", icon: "⚡", desc: "Fast", hold: 300, alpha: 0.7, threshold: 1.0, deadzone: 0.6 },
 ];
 
-function SliderRow({ label, hint, value, display, min, max, step, accent, onChange }) {
+function SliderRow({ label, hint, help, value, display, min, max, step, accent, onChange }) {
   const pct = ((value - min) / (max - min)) * 100;
   return (
     <div style={s.sliderRow}>
       <div style={s.sliderMeta}>
-        <span style={s.sliderLabel}>{label}</span>
+        <span style={s.sliderLabelRow}>
+          <span style={s.sliderLabel}>{label}</span>
+          <HelpIcon text={help || hint} />
+        </span>
         <span style={{ ...s.sliderValue, color: accent }}>{display}</span>
       </div>
       <p style={s.sliderHint}>{hint}</p>
@@ -440,6 +553,21 @@ function SliderRow({ label, hint, value, display, min, max, step, accent, onChan
 
 function Divider() {
   return <div style={{ height: 1, background: "rgba(255,255,255,0.05)", margin: "4px 0" }} />;
+}
+
+function ControlLabel({ text, help }) {
+  return (
+    <span style={s.selectLabelRow}>
+      <span style={s.selectLabel}>{text}:</span>
+      <HelpIcon text={help} />
+    </span>
+  );
+}
+
+function HelpIcon({ text }) {
+  return (
+    <span title={text} style={s.helpIcon} aria-label={text}>?</span>
+  );
 }
 
 const s = {
@@ -472,6 +600,7 @@ const s = {
   sectionSub: { fontSize: "12px", color: "rgba(255,255,255,0.25)", margin: "4px 0 0" },
   sliderRow: { display: "flex", flexDirection: "column", gap: "6px" },
   sliderMeta: { display: "flex", justifyContent: "space-between", alignItems: "baseline" },
+  sliderLabelRow: { display: "flex", alignItems: "center", gap: 8 },
   sliderLabel: { fontSize: "13px", fontWeight: "500", color: "rgba(255,255,255,0.65)" },
   sliderValue: { fontSize: "13px", fontWeight: "600", fontVariantNumeric: "tabular-nums" },
   sliderHint: { fontSize: "11px", color: "rgba(255,255,255,0.22)", margin: 0 },
@@ -507,7 +636,13 @@ const s = {
     letterSpacing: "0.08em", transition: "all 0.2s",
   },
   selectRow: { display: "flex", flexDirection: "column", gap: "10px" },
+  selectLabelRow: { display: "flex", alignItems: "center", gap: 8 },
   selectLabel: { fontSize: "13px", fontWeight: "500", color: "rgba(255,255,255,0.65)" },
+  helpIcon: {
+    width: 16, height: 16, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center",
+    fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.65)",
+    border: "1px solid rgba(255,255,255,0.25)", cursor: "help", userSelect: "none",
+  },
   selectInput: {
     padding: "12px 16px", borderRadius: "12px", background: "linear-gradient(135deg, rgba(34,197,94,0.15) 0%, rgba(34,197,94,0.08) 100%)",
     border: "1.5px solid rgba(34,197,94,0.4)", color: "#fff",

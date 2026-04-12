@@ -22,8 +22,8 @@ const getInitialCenterBuffer = () => {
 const getInitialCommandDelay = () => {
   try {
     const saved = localStorage.getItem("eyeCommandDelay");
-    return saved ? parseFloat(saved) : 200;
-  } catch { return 200; }
+    return saved ? parseFloat(saved) : 350;
+  } catch { return 350; }
 };
 
 // ── Shared timing constants ───────────────────────────────────────────────────
@@ -31,7 +31,8 @@ const AUTO_REPEAT_MS  = 600;
 
 // ── CNN constants ─────────────────────────────────────────────────────────────
 const CONF_THRESHOLD = 0.55;
-const DEBOUNCE_MS    = 80;
+const DEBOUNCE_MS    = 200;
+const MIN_STABLE_FRAMES = 2;
 
 // ── Gesture customization (read from localStorage) ───────────────────────────
 const getSelectionMethod = () => {
@@ -114,8 +115,8 @@ export function InputControlProvider({ children }) {
   const dwellFiredRef     = useRef(false);
   const selectionDwellStartRef = useRef(null); // Track dwell for configured selection method
   const selectionDwellFiredRef = useRef(false); // Track if selection dwell fired
-  const cnnSelectionDwellStartRef = useRef(null); // Track direction dwell for CNN
-  const cnnSelectionDwellFiredRef = useRef(false); // Track if CNN direction dwell fired
+  const cnnSelectionDwellStartRef = useRef(null); // Track dwell for CNN selection direction
+  const cnnSelectionDwellFiredRef = useRef(false); // Track if CNN selection dwell fired
   const cnnLastCmdTimeRef = useRef(0);        // Track CNN command delay (CRITICAL FIX)
   const headLastCmdTimeRef = useRef(0);       // Track HEAD command delay (CRITICAL FIX)
   const lastRepeatRef     = useRef(0);  const lastDirectionRef  = useRef(null);     // NEW: Track last direction
@@ -449,65 +450,97 @@ export function InputControlProvider({ children }) {
   useEffect(() => {
     if (mode !== "cnn") { setCnnReady(false); setGazeLabel("—"); return; }
 
-    console.log(`[CNN] starting — backend source ${NN_SERVER}/predict`);
+    console.log("[CNN] starting");
 
-    let rawDir      = null;
-    let rawStart    = 0;
-    let stableDir   = null;
+    let rawDir = null;
+    let rawStart = 0;
+    let stableDir = null;
+    let stableFrames = 0;
 
     function handlePrediction(data) {
       if (!data.ready) return;
+
       setCnnReady(true);
       const rawName = String(data.name || "").toUpperCase();
       // Legacy compatibility: old models may still emit CLOSED.
       const normalizedName = rawName === "CLOSED" ? "CENTER" : rawName;
-      setGazeLabel(normalizedName || "—");
+      const confidence = Number(data.confidence);
+      const confidenceText = Number.isFinite(confidence) ? confidence.toFixed(2) : "0.00";
+      setGazeLabel(normalizedName ? `${normalizedName} (${confidenceText})` : "—");
 
       const now = Date.now();
-      // CENTER is neutral: never actionable.
-      const dir = data.confidence >= CONF_THRESHOLD && normalizedName !== "CENTER" ? normalizedName : null;
+      const dir = confidence >= CONF_THRESHOLD ? normalizedName : null;
       const selectionMethod = getSelectionMethod(); // right/left/up/down
       const selectionDwell = getSelectionDwell();   // 500-3000ms
       const commandDelay = commandDelayRef.current || 200;
-
-      // ── direction-based selection only (CENTER is neutral) ───────────────
-      if (dir === selectionMethod.toUpperCase()) {
-        // Direction-based selection with dwell
-        if (!cnnSelectionDwellStartRef.current) {
-          cnnSelectionDwellStartRef.current = now;
-          cnnSelectionDwellFiredRef.current = false;
-        } else if (!cnnSelectionDwellFiredRef.current && (now - cnnSelectionDwellStartRef.current) >= selectionDwell) {
-          cnnSelectionDwellFiredRef.current = true;
-          console.log(`[CNN] ${selectionMethod.toUpperCase()} dwell ${selectionDwell}ms → dispatching FORWARD`);
-          dispatch("FORWARD");
-        }
-        rawDir = null; stableDir = null;
-        return;
-      } else {
-        // Not the selection direction - reset dwell
-        cnnSelectionDwellStartRef.current = null;
-        cnnSelectionDwellFiredRef.current = false;
-      }
+      const debounceMs = DEBOUNCE_MS;
+      const minStableFrames = MIN_STABLE_FRAMES;
 
       // Neutral/low-confidence state resets navigation hold state.
       if (dir === null) {
         rawDir = null;
         stableDir = null;
+        stableFrames = 0;
+        cnnSelectionDwellStartRef.current = null;
+        cnnSelectionDwellFiredRef.current = false;
         return;
       }
 
-      // ── navigation directions: small debounce + command delay ──────────────
-      if (dir !== rawDir) { rawDir = dir; rawStart = now; }
+      // CENTER is neutral for CNN mode (no-op).
+      if (dir === "CENTER") {
+        rawDir = null;
+        stableDir = null;
+        stableFrames = 0;
+        cnnSelectionDwellStartRef.current = null;
+        cnnSelectionDwellFiredRef.current = false;
+        return;
+      }
 
-      const isStable = dir !== null && (now - rawStart) >= DEBOUNCE_MS;
+      // Direction-based selection with configurable dwell.
+      if (dir === selectionMethod.toUpperCase()) {
+        if (!cnnSelectionDwellStartRef.current) {
+          cnnSelectionDwellStartRef.current = now;
+          cnnSelectionDwellFiredRef.current = false;
+        } else if (!cnnSelectionDwellFiredRef.current && (now - cnnSelectionDwellStartRef.current) >= selectionDwell) {
+          if ((now - cnnLastCmdTimeRef.current) >= commandDelay) {
+            cnnSelectionDwellFiredRef.current = true;
+            console.log(`[CNN] ${selectionMethod.toUpperCase()} dwell ${selectionDwell}ms → dispatch FORWARD`);
+            dispatch("FORWARD");
+            cnnLastCmdTimeRef.current = now;
+          }
+        }
+
+        // While selecting, block navigation spam.
+        rawDir = null;
+        stableDir = null;
+        stableFrames = 0;
+        return;
+      } else {
+        // Not on selection direction anymore: reset dwell.
+        cnnSelectionDwellStartRef.current = null;
+        cnnSelectionDwellFiredRef.current = false;
+      }
+
+      // ── debounce + stability: 150-300ms + at least 2 consecutive frames ───
+      if (dir !== rawDir) {
+        rawDir = dir;
+        rawStart = now;
+        stableFrames = 1;
+      } else {
+        stableFrames += 1;
+      }
+
+      const isStable = dir !== null && (now - rawStart) >= debounceMs;
       if (!isStable) { stableDir = null; return; }
+      if (stableFrames < minStableFrames) { stableDir = null; return; }
 
       if (stableDir !== dir) {
-        // Apply command delay before dispatching navigation
+        // Apply command delay before dispatching
         if ((now - cnnLastCmdTimeRef.current) >= commandDelay) {
-          console.log(`[CNN] dispatch ${dir}  (conf=${data.confidence.toFixed(2)})`);
+          const cmd = dir;
+          console.log(`[CNN] dispatch ${cmd}  (conf=${confidenceText})`);
           stableDir = dir;
-          dispatch(dir);
+          dispatch(cmd);
           cnnLastCmdTimeRef.current = now;
         }
       }
@@ -516,32 +549,40 @@ export function InputControlProvider({ children }) {
 
     let ws;
     let isConnected = false;
-    function connect() {
+
+    function connectWs() {
       if (isConnected) return;
 
-      const testWsUrl = "ws://localhost:8001/ws/predict";
-      const backendWsUrl = NN_SERVER.replace("http", "ws") + "/ws/predict";
-      const wsUrl = window.location.hostname === "localhost" ? testWsUrl : backendWsUrl;
+      const wsUrl = "ws://localhost:8000/ws/predict";
 
       console.log("[CNN] connecting to " + wsUrl);
       ws = new WebSocket(wsUrl);
-      ws.onopen    = () => {
+      ws.onopen = () => {
         isConnected = true;
         console.log("[CNN] WebSocket connected");
       };
-      ws.onmessage = (e) => handlePrediction(JSON.parse(e.data));
-      ws.onerror   = () => console.warn("[CNN] WebSocket error — is the backend running?");
-      ws.onclose   = () => {
+      ws.onmessage = (e) => {
+        try {
+          handlePrediction(JSON.parse(e.data));
+        } catch {
+          console.warn("[CNN] invalid JSON frame ignored");
+        }
+      };
+      ws.onerror = () => console.warn("[CNN] WebSocket error — is the backend running?");
+      ws.onclose = () => {
         isConnected = false;
         setCnnReady(false);
         setGazeLabel("—");
         console.warn("[CNN] WebSocket closed, retrying in 2s…");
-        setTimeout(() => { if (modeRef.current === "cnn") connect(); }, 2000);
+        setTimeout(() => { if (modeRef.current === "cnn") connectWs(); }, 2000);
       };
     }
 
-    connect();
-    return () => { ws && ws.close(); };
+    connectWs();
+
+    return () => {
+      if (ws) ws.close();
+    };
   }, [mode, dispatch]);
 
   // ── Toggle / set mode ────────────────────────────────────────────────────

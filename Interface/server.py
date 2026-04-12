@@ -155,6 +155,15 @@ _STABLE_LOW_CONF_RESET = 5
 _STABLE_STALE_MS = 1200
 _last_stable_update_ms = 0
 
+_STABLE_WINDOW_MIN = 3
+_STABLE_WINDOW_MAX = 15
+_STABLE_MIN_CONF_MIN = 0.30
+_STABLE_MIN_CONF_MAX = 0.95
+_STABLE_LOW_CONF_RESET_MIN = 1
+_STABLE_LOW_CONF_RESET_MAX = 30
+_STABLE_STALE_MS_MIN = 300
+_STABLE_STALE_MS_MAX = 5000
+
 CAMERA_ROTATE = os.getenv("ESP32_CAMERA_ROTATE", "none").strip().lower()
 
 
@@ -601,6 +610,22 @@ class HeadSettingsRequest(BaseModel):
     threshold: Optional[float] = None
     deadzone: Optional[float] = None
 
+
+class CnnStabilizationSettingsRequest(BaseModel):
+    stable_window_size: Optional[int] = None
+    min_confidence: Optional[float] = None
+    low_conf_reset_frames: Optional[int] = None
+    stale_timeout_ms: Optional[int] = None
+
+
+def _get_cnn_stabilization_settings() -> dict:
+    return {
+        "stable_window_size": int(_STABLE_WINDOW_SIZE),
+        "min_confidence": float(_STABLE_MIN_CONF),
+        "low_conf_reset_frames": int(_STABLE_LOW_CONF_RESET),
+        "stale_timeout_ms": int(_STABLE_STALE_MS),
+    }
+
 @app.websocket("/ws/predict")
 async def predict_ws(websocket: WebSocket):
     await websocket.accept()
@@ -753,6 +778,63 @@ def head_update_settings(body: HeadSettingsRequest):
             "threshold": _head_threshold,
             "deadzone": _head_deadzone,
         }
+
+
+@app.get("/cnn/stabilization-settings")
+def get_cnn_stabilization_settings():
+    with _cnn_lock:
+        return _get_cnn_stabilization_settings()
+
+
+@app.post("/cnn/stabilization-settings")
+def update_cnn_stabilization_settings(body: CnnStabilizationSettingsRequest):
+    global _STABLE_WINDOW_SIZE, _STABLE_MIN_CONF, _stable_hist
+    global _STABLE_LOW_CONF_RESET, _STABLE_STALE_MS, _low_conf_streak
+    global _last_stable_update_ms
+
+    with _cnn_lock:
+        if body.stable_window_size is not None:
+            v = int(body.stable_window_size)
+            if v < _STABLE_WINDOW_MIN or v > _STABLE_WINDOW_MAX:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"stable_window_size must be between {_STABLE_WINDOW_MIN} and {_STABLE_WINDOW_MAX}",
+                )
+            _STABLE_WINDOW_SIZE = v
+            _stable_hist = deque(_stable_hist, maxlen=_STABLE_WINDOW_SIZE)
+
+        if body.min_confidence is not None:
+            v = float(body.min_confidence)
+            if v < _STABLE_MIN_CONF_MIN or v > _STABLE_MIN_CONF_MAX:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"min_confidence must be between {_STABLE_MIN_CONF_MIN:.2f} and {_STABLE_MIN_CONF_MAX:.2f}",
+                )
+            _STABLE_MIN_CONF = v
+
+        if body.low_conf_reset_frames is not None:
+            v = int(body.low_conf_reset_frames)
+            if v < _STABLE_LOW_CONF_RESET_MIN or v > _STABLE_LOW_CONF_RESET_MAX:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"low_conf_reset_frames must be between {_STABLE_LOW_CONF_RESET_MIN} and {_STABLE_LOW_CONF_RESET_MAX}",
+                )
+            _STABLE_LOW_CONF_RESET = v
+
+        if body.stale_timeout_ms is not None:
+            v = int(body.stale_timeout_ms)
+            if v < _STABLE_STALE_MS_MIN or v > _STABLE_STALE_MS_MAX:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"stale_timeout_ms must be between {_STABLE_STALE_MS_MIN} and {_STABLE_STALE_MS_MAX}",
+                )
+            _STABLE_STALE_MS = v
+
+        # Reset transitional counters to make changes deterministic immediately.
+        _low_conf_streak = 0
+        _last_stable_update_ms = int(time.time() * 1000)
+
+        return _get_cnn_stabilization_settings()
 
 @app.get("/camera/stream")
 async def camera_stream():
