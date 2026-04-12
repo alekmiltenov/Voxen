@@ -33,16 +33,31 @@ const AUTO_REPEAT_MS  = 600;
 const CONF_THRESHOLD = 0.55;
 const DEBOUNCE_MS    = 200;
 const MIN_STABLE_FRAMES = 2;
+const SELECTION_RELEASE_NAV_MIN_MS = 120;
 
 // ── Gesture customization (read from localStorage) ───────────────────────────
 const getSelectionMethod = () => {
   try {
     const saved = (localStorage.getItem("eyeSelectionMethod") || "right").toLowerCase();
-    // Legacy compatibility: CLOSED/CENTER selection modes are now treated as RIGHT.
-    if (saved === "closed" || saved === "center") return "right";
-    if (["left", "right", "up", "down"].includes(saved)) return saved;
+    // Legacy compatibility: old "closed" maps to center.
+    if (saved === "closed") return "center";
+    if (["left", "right", "up", "down", "center"].includes(saved)) return saved;
     return "right";
   } catch { return "right"; }
+};
+
+const getInitialCenterSelectMinConfidence = () => {
+  try {
+    const saved = parseFloat(localStorage.getItem("cnnCenterSelectMinConfidence") || "");
+    return Number.isFinite(saved) ? Math.max(0.55, Math.min(0.99, saved)) : 0.82;
+  } catch { return 0.82; }
+};
+
+const getInitialCenterSelectNoiseDelta = () => {
+  try {
+    const saved = parseFloat(localStorage.getItem("cnnCenterSelectNoiseDelta") || "");
+    return Number.isFinite(saved) ? Math.max(0.01, Math.min(0.2, saved)) : 0.06;
+  } catch { return 0.06; }
 };
 
 const getHeadSelectionMethod = () => {
@@ -79,6 +94,9 @@ export function InputControlProvider({ children }) {
   // ── CNN eye states ───────────────────────────────────────────────────────
   const [cnnReady,  setCnnReady]  = useState(false);
   const [gazeLabel, setGazeLabel] = useState("—");
+  const [cnnDebug,  setCnnDebug]  = useState(null);
+  const [centerSelectMinConfidence, setCenterSelectMinConfidenceState] = useState(getInitialCenterSelectMinConfidence);
+  const [centerSelectNoiseDelta, setCenterSelectNoiseDeltaState] = useState(getInitialCenterSelectNoiseDelta);
 
   // ── Shared refs ──────────────────────────────────────────────────────────
   const modeRef         = useRef(mode);
@@ -86,6 +104,8 @@ export function InputControlProvider({ children }) {
   const holdRef         = useRef({ cmd: null, start: 0 });
   const holdDurationRef = useRef(500);
   const socketRef       = useRef(null);
+  const centerSelectMinConfidenceRef = useRef(centerSelectMinConfidence);
+  const centerSelectNoiseDeltaRef = useRef(centerSelectNoiseDelta);
 
   // ── MediaPipe refs ───────────────────────────────────────────────────────
   const videoRef          = useRef(null);
@@ -117,6 +137,8 @@ export function InputControlProvider({ children }) {
   const selectionDwellFiredRef = useRef(false); // Track if selection dwell fired
   const cnnSelectionDwellStartRef = useRef(null); // Track dwell for CNN selection direction
   const cnnSelectionDwellFiredRef = useRef(false); // Track if CNN selection dwell fired
+  const cnnCenterConfidenceHistoryRef = useRef([]); // confidence history for CENTER-noise gating
+  const cnnNavLockDirRef = useRef(null); // prevent repeated nav while holding same direction
   const cnnLastCmdTimeRef = useRef(0);        // Track CNN command delay (CRITICAL FIX)
   const headLastCmdTimeRef = useRef(0);       // Track HEAD command delay (CRITICAL FIX)
   const lastRepeatRef     = useRef(0);  const lastDirectionRef  = useRef(null);     // NEW: Track last direction
@@ -125,6 +147,8 @@ export function InputControlProvider({ children }) {
   // keep refs in sync
   useEffect(() => { modeRef.current = mode; }, [mode]);
   useEffect(() => { holdDurationRef.current = holdDuration; }, [holdDuration]);
+  useEffect(() => { centerSelectMinConfidenceRef.current = centerSelectMinConfidence; }, [centerSelectMinConfidence]);
+  useEffect(() => { centerSelectNoiseDeltaRef.current = centerSelectNoiseDelta; }, [centerSelectNoiseDelta]);
   useEffect(() => { try { localStorage.setItem("controlMode", mode); } catch {} }, [mode]);
 
   // ── Register / unregister page handlers ──────────────────────────────────
@@ -443,12 +467,24 @@ export function InputControlProvider({ children }) {
   const setYBias = useCallback((v) => { yBiasRef.current = v; }, []);
   const setCenterBuffer = useCallback((v) => { centerBufferRef.current = v; }, []);
   const setCommandDelay = useCallback((v) => { commandDelayRef.current = v; }, []);
+  const setCenterSelectMinConfidence = useCallback((value) => {
+    const n = Number(value);
+    const next = Number.isFinite(n) ? Math.max(0.55, Math.min(0.99, n)) : 0.82;
+    setCenterSelectMinConfidenceState(next);
+    try { localStorage.setItem("cnnCenterSelectMinConfidence", String(next)); } catch {}
+  }, []);
+  const setCenterSelectNoiseDelta = useCallback((value) => {
+    const n = Number(value);
+    const next = Number.isFinite(n) ? Math.max(0.01, Math.min(0.2, n)) : 0.06;
+    setCenterSelectNoiseDeltaState(next);
+    try { localStorage.setItem("cnnCenterSelectNoiseDelta", String(next)); } catch {}
+  }, []);
 
   // ════════════════════════════════════════════════════════════════════════
   // CNN MODE — reads predictions from backend /ws/predict
   // ════════════════════════════════════════════════════════════════════════
   useEffect(() => {
-    if (mode !== "cnn") { setCnnReady(false); setGazeLabel("—"); return; }
+    if (mode !== "cnn") { setCnnReady(false); setGazeLabel("—"); setCnnDebug(null); return; }
 
     console.log("[CNN] starting");
 
@@ -475,6 +511,30 @@ export function InputControlProvider({ children }) {
       const commandDelay = commandDelayRef.current || 200;
       const debounceMs = DEBOUNCE_MS;
       const minStableFrames = MIN_STABLE_FRAMES;
+      const selectionMethodUpper = selectionMethod.toUpperCase();
+
+      const updateCnnDebug = (overrides = {}) => {
+        const start = cnnSelectionDwellStartRef.current;
+        const elapsed = start ? Math.max(0, now - start) : 0;
+        const progress = Math.max(0, Math.min(1, elapsed / Math.max(selectionDwell, 1)));
+        const remainingMs = Math.max(0, selectionDwell - elapsed);
+        setCnnDebug({
+          direction: normalizedName || "NONE",
+          confidence: Number.isFinite(confidence) ? confidence : 0,
+          selectionMethod: selectionMethodUpper,
+          selectionDwell,
+          selectionStartMs: start || null,
+          navLockDir: cnnNavLockDirRef.current,
+          progress,
+          remainingMs,
+          ...overrides,
+        });
+      };
+
+      // Unlock one-shot navigation after a clear neutral CENTER frame.
+      if (normalizedName === "CENTER") {
+        cnnNavLockDirRef.current = null;
+      }
 
       // Neutral/low-confidence state resets navigation hold state.
       if (dir === null) {
@@ -483,28 +543,121 @@ export function InputControlProvider({ children }) {
         stableFrames = 0;
         cnnSelectionDwellStartRef.current = null;
         cnnSelectionDwellFiredRef.current = false;
+        updateCnnDebug({ progress: 0, remainingMs: selectionDwell, state: "low-confidence" });
         return;
       }
 
-      // CENTER is neutral for CNN mode (no-op).
+      // CENTER selection mode with confidence + noise gating.
+      if (selectionMethodUpper === "CENTER") {
+        if (normalizedName !== "CENTER") {
+          cnnSelectionDwellStartRef.current = null;
+          cnnSelectionDwellFiredRef.current = false;
+          cnnCenterConfidenceHistoryRef.current = [];
+          updateCnnDebug({ progress: 0, remainingMs: selectionDwell, state: "navigating" });
+          // Not CENTER: continue below with normal navigation handling.
+        } else {
+          const hist = cnnCenterConfidenceHistoryRef.current;
+          hist.push(confidence);
+          while (hist.length > 8) hist.shift();
+
+          const minConf = centerSelectMinConfidenceRef.current || 0.82;
+          const noiseDeltaLimit = centerSelectNoiseDeltaRef.current || 0.06;
+          const confMin = Math.min(...hist);
+          const confMax = Math.max(...hist);
+          const confNoiseDelta = confMax - confMin;
+          const hasEnoughSamples = hist.length >= 4;
+          const confidenceGood = confidence >= minConf;
+          const noiseGood = hasEnoughSamples && confNoiseDelta <= noiseDeltaLimit;
+
+          if (!confidenceGood || !noiseGood) {
+            cnnSelectionDwellStartRef.current = null;
+            cnnSelectionDwellFiredRef.current = false;
+            updateCnnDebug({
+              progress: 0,
+              remainingMs: selectionDwell,
+              centerGateConfidenceOk: confidenceGood,
+              centerGateNoiseOk: noiseGood,
+              centerNoiseDelta: confNoiseDelta,
+              centerNoiseLimit: noiseDeltaLimit,
+              centerMinConfidence: minConf,
+              state: "center-gating",
+            });
+            // Keep CENTER neutral while gating fails.
+            return;
+          }
+
+          if (!cnnSelectionDwellStartRef.current) {
+            cnnSelectionDwellStartRef.current = now;
+            cnnSelectionDwellFiredRef.current = false;
+          } else if (!cnnSelectionDwellFiredRef.current && (now - cnnSelectionDwellStartRef.current) >= selectionDwell) {
+            if ((now - cnnLastCmdTimeRef.current) >= commandDelay) {
+              cnnSelectionDwellFiredRef.current = true;
+              console.log(`[CNN] CENTER dwell ${selectionDwell}ms (conf>=${minConf.toFixed(2)}, noiseΔ<=${noiseDeltaLimit.toFixed(3)}) → dispatch FORWARD`);
+              dispatch("FORWARD");
+              cnnLastCmdTimeRef.current = now;
+            }
+          }
+
+          updateCnnDebug({
+            centerGateConfidenceOk: confidenceGood,
+            centerGateNoiseOk: noiseGood,
+            centerNoiseDelta: confNoiseDelta,
+            centerNoiseLimit: noiseDeltaLimit,
+            centerMinConfidence: minConf,
+            state: "center-hold",
+          });
+
+          // While center-selecting, block navigation.
+          rawDir = null;
+          stableDir = null;
+          stableFrames = 0;
+          return;
+        }
+      }
+
+      // CENTER is neutral when selection method is directional.
       if (dir === "CENTER") {
+        // Release-to-move: if user held selection direction then returned to CENTER
+        // before dwell fired, issue one navigation step in that direction.
+        const hadSelectionHold = !!cnnSelectionDwellStartRef.current;
+        const holdElapsedMs = hadSelectionHold ? (now - cnnSelectionDwellStartRef.current) : 0;
+        const shouldReleaseNavigate =
+          selectionMethodUpper !== "CENTER" &&
+          hadSelectionHold &&
+          !cnnSelectionDwellFiredRef.current &&
+          holdElapsedMs >= SELECTION_RELEASE_NAV_MIN_MS;
+
+        if (shouldReleaseNavigate && (now - cnnLastCmdTimeRef.current) >= commandDelay) {
+          console.log(`[CNN] release-nav ${selectionMethodUpper} (${holdElapsedMs}ms hold → CENTER)`);
+          dispatch(selectionMethodUpper);
+          cnnLastCmdTimeRef.current = now;
+        }
+
         rawDir = null;
         stableDir = null;
         stableFrames = 0;
         cnnSelectionDwellStartRef.current = null;
         cnnSelectionDwellFiredRef.current = false;
+        cnnCenterConfidenceHistoryRef.current = [];
+        updateCnnDebug({ progress: 0, remainingMs: selectionDwell, state: "center-neutral" });
+        return;
+      }
+
+      // One-shot navigation lock: if user keeps holding same direction, do not repeat.
+      if (cnnNavLockDirRef.current && dir === cnnNavLockDirRef.current) {
+        updateCnnDebug({ state: "nav-locked" });
         return;
       }
 
       // Direction-based selection with configurable dwell.
-      if (dir === selectionMethod.toUpperCase()) {
+      if (dir === selectionMethodUpper) {
         if (!cnnSelectionDwellStartRef.current) {
           cnnSelectionDwellStartRef.current = now;
           cnnSelectionDwellFiredRef.current = false;
         } else if (!cnnSelectionDwellFiredRef.current && (now - cnnSelectionDwellStartRef.current) >= selectionDwell) {
           if ((now - cnnLastCmdTimeRef.current) >= commandDelay) {
             cnnSelectionDwellFiredRef.current = true;
-            console.log(`[CNN] ${selectionMethod.toUpperCase()} dwell ${selectionDwell}ms → dispatch FORWARD`);
+            console.log(`[CNN] ${selectionMethodUpper} dwell ${selectionDwell}ms → dispatch FORWARD`);
             dispatch("FORWARD");
             cnnLastCmdTimeRef.current = now;
           }
@@ -514,11 +667,13 @@ export function InputControlProvider({ children }) {
         rawDir = null;
         stableDir = null;
         stableFrames = 0;
+        updateCnnDebug({ state: "direction-hold" });
         return;
       } else {
         // Not on selection direction anymore: reset dwell.
         cnnSelectionDwellStartRef.current = null;
         cnnSelectionDwellFiredRef.current = false;
+        updateCnnDebug({ progress: 0, remainingMs: selectionDwell, state: "navigating" });
       }
 
       // ── debounce + stability: 150-300ms + at least 2 consecutive frames ───
@@ -541,7 +696,9 @@ export function InputControlProvider({ children }) {
           console.log(`[CNN] dispatch ${cmd}  (conf=${confidenceText})`);
           stableDir = dir;
           dispatch(cmd);
+          cnnNavLockDirRef.current = cmd;
           cnnLastCmdTimeRef.current = now;
+          updateCnnDebug({ state: "navigating" });
         }
       }
       // no auto-repeat — user must look away and back to fire again
@@ -573,6 +730,7 @@ export function InputControlProvider({ children }) {
         isConnected = false;
         setCnnReady(false);
         setGazeLabel("—");
+        setCnnDebug(null);
         console.warn("[CNN] WebSocket closed, retrying in 2s…");
         setTimeout(() => { if (modeRef.current === "cnn") connectWs(); }, 2000);
       };
@@ -612,6 +770,9 @@ export function InputControlProvider({ children }) {
         eyeReady, eyeCentered, eyeTracking, recenterEyes, setYBias, setCenterBuffer, setCommandDelay, eyeDebug,
         // cnn eyes
         cnnReady, gazeLabel,
+        cnnDebug,
+        centerSelectMinConfidence, setCenterSelectMinConfidence,
+        centerSelectNoiseDelta, setCenterSelectNoiseDelta,
       }}
     >
       {children}

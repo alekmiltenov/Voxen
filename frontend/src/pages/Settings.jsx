@@ -42,6 +42,8 @@ export default function Settings() {
     eyeReady, eyeCentered,
     recenterEyes, setYBias, setCenterBuffer, setCommandDelay,
     cnnReady, gazeLabel,
+    centerSelectMinConfidence, setCenterSelectMinConfidence,
+    centerSelectNoiseDelta, setCenterSelectNoiseDelta,
   } = useInputControl();
 
   const [localYBias, setLocalYBias] = useState(() => {
@@ -65,8 +67,8 @@ export default function Settings() {
   const [selectionMethod, setSelectionMethod] = useState(() => {
     try {
       const saved = (localStorage.getItem("eyeSelectionMethod") || "right").toLowerCase();
-      if (saved === "closed" || saved === "center") return "right";
-      return ["left", "right", "up", "down"].includes(saved) ? saved : "right";
+      if (saved === "closed") return "center";
+      return ["left", "right", "up", "down", "center"].includes(saved) ? saved : "right";
     } catch { return "right"; }
   });
   const [selectionDwell, setSelectionDwell] = useState(() => {
@@ -378,6 +380,7 @@ export default function Settings() {
                   <option value="left">LEFT (hold left)</option>
                   <option value="up">UP (hold up)</option>
                   <option value="down">DOWN (hold down)</option>
+                  <option value="center">CENTER (hold center)</option>
                 </select>
               </div>
 
@@ -452,13 +455,58 @@ export default function Settings() {
               <div style={s.selectRow}>
                 <ControlLabel text="Select using" help="Choose which CNN direction acts as confirm/select after dwell." />
                 <select value={selectionMethod} onChange={e => setSelectionMethod(e.target.value)}
-                  style={s.selectInput}>
+                  style={{
+                    ...s.selectInput,
+                    borderColor: selectionMethod === "center" ? "rgba(167,139,250,0.7)" : "rgba(34,197,94,0.4)",
+                    boxShadow: selectionMethod === "center"
+                      ? "0 0 0 1px rgba(167,139,250,0.35), 0 6px 16px rgba(167,139,250,0.2)"
+                      : s.selectInput.boxShadow,
+                    background: selectionMethod === "center"
+                      ? "linear-gradient(135deg, rgba(167,139,250,0.18) 0%, rgba(167,139,250,0.08) 100%)"
+                      : s.selectInput.background,
+                  }}>
                   <option value="right">RIGHT (hold right)</option>
                   <option value="left">LEFT (hold left)</option>
                   <option value="up">UP (hold up)</option>
                   <option value="down">DOWN (hold down)</option>
+                  <option value="center">CENTER (hold center)</option>
                 </select>
               </div>
+
+              {selectionMethod === "center" && (
+                <>
+                  <Divider />
+                  <div style={s.centerGroupBox}>
+                    <div style={s.centerGroupHeader}>CENTER selection tuning</div>
+                    <SliderRow
+                      label="Center min confidence"
+                      hint="Required confidence for CENTER hold to keep counting"
+                      help="If confidence drops below this, CENTER selection timer resets immediately."
+                      value={centerSelectMinConfidence}
+                      display={centerSelectMinConfidence.toFixed(2)}
+                      min={0.55}
+                      max={0.99}
+                      step={0.01}
+                      accent="#a78bfa"
+                      onChange={setCenterSelectMinConfidence}
+                    />
+
+                    <Divider />
+                    <SliderRow
+                      label="Center noise delta"
+                      hint="Allowed confidence jitter (max-min) while holding CENTER"
+                      help="Lower values require steadier confidence; higher values are more tolerant to noise."
+                      value={centerSelectNoiseDelta}
+                      display={centerSelectNoiseDelta.toFixed(3)}
+                      min={0.01}
+                      max={0.2}
+                      step={0.005}
+                      accent="#a78bfa"
+                      onChange={setCenterSelectNoiseDelta}
+                    />
+                  </div>
+                </>
+              )}
 
               <Divider />
               <SliderRow label="Selection dwell time" hint="How long to hold the gaze direction to select"
@@ -655,6 +703,23 @@ const s = {
     backgroundPosition: "right 12px center",
     backgroundSize: "18px",
     paddingRight: "40px",
+  },
+  centerGroupBox: {
+    border: "1px solid rgba(167,139,250,0.45)",
+    borderRadius: "12px",
+    padding: "12px 12px 8px",
+    background: "linear-gradient(135deg, rgba(167,139,250,0.14) 0%, rgba(167,139,250,0.06) 100%)",
+    boxShadow: "inset 0 0 0 1px rgba(167,139,250,0.12)",
+    display: "flex",
+    flexDirection: "column",
+    gap: "12px",
+  },
+  centerGroupHeader: {
+    fontSize: "11px",
+    fontWeight: "700",
+    letterSpacing: "0.08em",
+    textTransform: "uppercase",
+    color: "#c4b5fd",
   },
   legend: {
     position: "fixed", bottom: 28, left: 0, right: 0, textAlign: "center",

@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useInputControl } from "../pages/InputControlContext";
 import { useLocation } from "react-router-dom";
 
@@ -8,53 +9,153 @@ import { useLocation } from "react-router-dom";
  * On other pages: minimal direction indicator only
  */
 export default function EyeTrackingDebug() {
-  const { mode, eyeDebug } = useInputControl();
+  const { mode, eyeDebug, cnnDebug } = useInputControl();
   const location = useLocation();
   const isSettingsPage = location.pathname === "/settings";
+  const showCnnIndicator = mode === "cnn" && ["/", "/communicate"].includes(location.pathname);
 
-  if (mode !== "eyes" || !eyeDebug) {
-    return null;
-  }
+  if (mode === "eyes" && eyeDebug) {
+    // For non-Settings pages, show minimal direction indicator only
+    if (!isSettingsPage) {
+      const directionColors = {
+        UP: "#4f46e5",
+        DOWN: "#ef4444",
+        LEFT: "#f59e0b",
+        RIGHT: "#10b981",
+        CENTER: "#8b5cf6",
+      };
+      const dirColor = directionColors[eyeDebug.direction] || "#6b7280";
 
-  // For non-Settings pages, show minimal direction indicator only
-  if (!isSettingsPage) {
-    const directionColors = {
-      UP: "#4f46e5",
-      DOWN: "#ef4444",
-      LEFT: "#f59e0b",
-      RIGHT: "#10b981",
-      CENTER: "#8b5cf6",
-    };
-    const dirColor = directionColors[eyeDebug.direction] || "#6b7280";
+      return (
+        <div
+          style={{
+            position: "fixed",
+            top: 90,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 10000,
+            backgroundColor: "rgba(17, 24, 39, 0.92)",
+            border: "1.5px solid rgba(255, 255, 255, 0.15)",
+            borderRadius: "14px",
+            padding: "16px 28px",
+            fontFamily: "monospace",
+            fontSize: "18px",
+            fontWeight: "700",
+            color: dirColor,
+            boxShadow: "0 6px 20px rgba(0, 0, 0, 0.7)",
+            letterSpacing: "0.08em",
+          }}
+        >
+          {eyeDebug.direction}
+        </div>
+      );
+    }
 
+    // Settings page: full debug panel
     return (
-      <div
-        style={{
-          position: "fixed",
-          top: 90,
-          left: "50%",
-          transform: "translateX(-50%)",
-          zIndex: 10000,
-          backgroundColor: "rgba(17, 24, 39, 0.92)",
-          border: "1.5px solid rgba(255, 255, 255, 0.15)",
-          borderRadius: "14px",
-          padding: "16px 28px",
-          fontFamily: "monospace",
-          fontSize: "18px",
-          fontWeight: "700",
-          color: dirColor,
-          boxShadow: "0 6px 20px rgba(0, 0, 0, 0.7)",
-          letterSpacing: "0.08em",
-        }}
-      >
-        {eyeDebug.direction}
-      </div>
+      <FullDebugPanel eyeDebug={eyeDebug} />
     );
   }
 
-  // Settings page: full debug panel
+  if (showCnnIndicator && cnnDebug) {
+    return <CnnIndicator cnnDebug={cnnDebug} />;
+  }
+
+  return null;
+}
+
+function CnnIndicator({ cnnDebug }) {
+  const directionColors = {
+    UP: "#4f46e5",
+    DOWN: "#ef4444",
+    LEFT: "#f59e0b",
+    RIGHT: "#10b981",
+    CENTER: "#a78bfa",
+    NONE: "#6b7280",
+  };
+
+  const dir = String(cnnDebug.direction || "NONE").toUpperCase();
+  const dirColor = directionColors[dir] || "#6b7280";
+  const conf = Number(cnnDebug.confidence || 0);
+  const [progress, setProgress] = useState(Math.max(0, Math.min(1, Number(cnnDebug.progress || 0))));
+  const remainingMs = Math.max(0, Number(cnnDebug.remainingMs || 0));
+  const selectionMethod = String(cnnDebug.selectionMethod || "RIGHT").toUpperCase();
+  const navLockDir = String(cnnDebug.navLockDir || "").toUpperCase();
+  const isSelecting = progress > 0;
+  const state = String(cnnDebug.state || "");
+
+  let statusText = "idle";
+  if (state === "direction-hold" || state === "center-hold") {
+    statusText = `${(remainingMs / 1000).toFixed(1)}s to select`;
+  } else if (state === "nav-locked" && navLockDir) {
+    statusText = `${navLockDir} locked · center to unlock`;
+  }
+
+  useEffect(() => {
+    let raf = null;
+    const startMs = Number(cnnDebug.selectionStartMs || 0);
+    const dwell = Math.max(1, Number(cnnDebug.selectionDwell || 1));
+
+    const tick = () => {
+      const active = (cnnDebug.state === "center-hold" || cnnDebug.state === "direction-hold") && startMs > 0;
+      if (!active) {
+        setProgress(Math.max(0, Math.min(1, Number(cnnDebug.progress || 0))));
+        return;
+      }
+
+      const elapsed = Math.max(0, Date.now() - startMs);
+      const p = Math.max(0, Math.min(1, elapsed / dwell));
+      setProgress(p);
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+
+    tick();
+    return () => { if (raf) cancelAnimationFrame(raf); };
+  }, [cnnDebug.selectionStartMs, cnnDebug.selectionDwell, cnnDebug.state, cnnDebug.progress]);
+
   return (
-    <FullDebugPanel eyeDebug={eyeDebug} />
+    <div
+      style={{
+        position: "fixed",
+        top: 86,
+        left: "50%",
+        transform: "translateX(-50%)",
+        zIndex: 10000,
+        width: "min(420px, 86vw)",
+        backgroundColor: "rgba(17, 24, 39, 0.94)",
+        border: `1.5px solid ${isSelecting ? "rgba(167,139,250,0.55)" : "rgba(255, 255, 255, 0.15)"}`,
+        borderRadius: "14px",
+        padding: "12px 14px",
+        boxShadow: isSelecting ? "0 6px 22px rgba(167,139,250,0.25)" : "0 6px 20px rgba(0, 0, 0, 0.7)",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <span style={{ fontFamily: "monospace", fontSize: 18, fontWeight: 700, color: dirColor, letterSpacing: "0.06em" }}>
+          {dir}
+        </span>
+        <span style={{ fontFamily: "monospace", fontSize: 12, color: "rgba(255,255,255,0.65)" }}>
+          conf {conf.toFixed(2)}
+        </span>
+      </div>
+
+      <div style={{ height: 8, borderRadius: 999, background: "rgba(255,255,255,0.08)", overflow: "hidden" }}>
+        <div
+          style={{
+            width: `${Math.round(progress * 100)}%`,
+            height: "100%",
+            background: "linear-gradient(90deg, #a78bfa, #8b5cf6)",
+            transition: "width 60ms linear",
+          }}
+        />
+      </div>
+
+      <div style={{ marginTop: 7, display: "flex", justifyContent: "space-between", fontSize: 11, color: "rgba(255,255,255,0.55)" }}>
+        <span>Select: {selectionMethod}</span>
+        <span>{statusText}</span>
+      </div>
+
+      <div style={{ marginTop: 6, minHeight: 14, fontSize: 10, color: "#c4b5fd", letterSpacing: "0.03em" }} />
+    </div>
   );
 }
 
