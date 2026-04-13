@@ -286,6 +286,15 @@ export default function Keyboard() {
       }
 
       if (scanEnabledRef.current) {
+        if (cmd === "UP") {
+          if (scanPhaseRef.current === "item") {
+            triggerScanPulse();
+            setScanPhase("row");
+            setScanCol(0);
+          }
+          return;
+        }
+
         if (cmd !== "FORWARD") return;
 
         triggerScanPulse();
@@ -430,12 +439,15 @@ export default function Keyboard() {
           ← Back
         </button>
         <div style={s.titleCluster}>
-          {enabled && indicatorDebug && (
-            <div style={s.compactIndicatorWrap}>
-              <GazeIndicator debug={indicatorDebug}/>
-            </div>
-          )}
+          <div style={s.titleSideSlot}>
+            {enabled && indicatorDebug && (
+              <div style={s.compactIndicatorWrap}>
+                <GazeIndicator debug={indicatorDebug}/>
+              </div>
+            )}
+          </div>
           <span style={s.label}>Keyboard</span>
+          <div style={s.titleSideSlot} />
         </div>
 
         {enabled && (
@@ -444,7 +456,7 @@ export default function Keyboard() {
               style={{ ...s.scanToggleBtn, ...(scanEnabled ? s.scanToggleBtnOn : {}) }}
               onClick={() => setScanEnabled(v => !v)}
             >
-              {scanEnabled ? "Scan ON" : "Scan OFF"}
+              {scanEnabled ? "Scan: ON" : "Scan: OFF"}
             </button>
 
             {scanEnabled && (
@@ -475,6 +487,10 @@ export default function Keyboard() {
       </div>
 
       <div style={s.keysArea}>
+        {enabled && scanEnabled && mode === "eyes" && (
+          <p style={s.scanGestureHint}>Hold DOWN to select · Hold UP to go back</p>
+        )}
+
         {/*
         {enabled && (
           <div style={{ ...s.statusOverlayRow, ...(scanPulse ? s.statusOverlayPulse : {}) }}>
@@ -508,7 +524,7 @@ export default function Keyboard() {
                   onMouseEnter={() => setHoveredKey(keyId)}
                   onMouseLeave={() => setHoveredKey(null)}
                   onClick={() => { setSelection(ri, ci); pressKey(key); }}>
-                  {key.toLowerCase()}
+                  {key}
                 </button>
               );
             })}
@@ -557,11 +573,12 @@ export default function Keyboard() {
               ...s.key,
               ...s.doneKey,
               flex: 0.7,
-              ...((enabled && !scanEnabled && selRow === 3 && selCol === 2)
-                || (!enabled && hoveredKey === "done")
-                || (enabled && scanEnabled && scanPhase === "item" && scanRow === 3 && scanCol === 2)
-                ? s.selectedKey
-                : s.unselectedDoneKey),
+              ...((!enabled && hoveredKey === "done")
+                ? s.doneHoverKey
+                : ((enabled && !scanEnabled && selRow === 3 && selCol === 2)
+                  || (enabled && scanEnabled && scanPhase === "item" && scanRow === 3 && scanCol === 2)
+                  ? s.doneSelectedKey
+                  : s.unselectedDoneKey)),
             }}
             onMouseEnter={() => setHoveredKey("done")}
             onMouseLeave={() => setHoveredKey(null)}
@@ -609,9 +626,16 @@ const s = {
     marginTop: "10px",
   },
   titleCluster: {
+    display: "grid",
+    gridTemplateColumns: "178px auto 178px",
+    alignItems: "center",
+    columnGap: 10,
+  },
+  titleSideSlot: {
+    width: "178px",
     display: "flex",
     alignItems: "center",
-    gap: 10,
+    justifyContent: "center",
   },
   compactIndicatorWrap: {
     display: "flex",
@@ -631,19 +655,19 @@ const s = {
     zIndex: 2,
   },
   scanToggleBtn: {
-    padding: "7px 12px",
-    borderRadius: "14px",
+    padding: "8px 18px",
+    borderRadius: "20px",
     background: "transparent",
-    border: "1px solid rgba(255,255,255,0.16)",
-    color: "rgba(255,255,255,0.55)",
-    fontSize: "12px",
+    border: "1px solid rgba(255,255,255,0.1)",
+    color: "rgba(255,255,255,0.35)",
+    fontSize: "13px",
     cursor: "pointer",
     letterSpacing: "0.03em",
   },
   scanToggleBtnOn: {
-    borderColor: "rgba(255,255,255,0.3)",
+    borderColor: "rgba(255,255,255,0.1)",
     background: "rgba(255,255,255,0.08)",
-    color: "rgba(255,255,255,0.9)",
+    color: "rgba(255,255,255,0.35)",
   },
   scanSpeedWrap: {
     display: "flex",
@@ -681,6 +705,7 @@ const s = {
   label: {
     fontSize: "14px", color: "rgba(255,255,255,0.35)",
     letterSpacing: "0.1em", textTransform: "uppercase",
+    justifySelf: "center",
   },
   headHint: {
     textAlign: "center", fontSize: 13, color: "rgba(255,255,255,0.25)",
@@ -703,6 +728,21 @@ const s = {
   },
   displayText: { fontSize: "26px", fontWeight: "300", color: "#ffffff" },
   placeholder: { fontSize: "20px", color: "rgba(255,255,255,0.2)" },
+  scanGestureHint: {
+    margin: 0,
+    textAlign: "center",
+    fontSize: "12px",
+    color: "rgba(255,255,255,0.35)",
+    letterSpacing: "0.06em",
+    textTransform: "uppercase",
+    position: "absolute",
+    top: "-34px",
+    left: "50%",
+    transform: "translateX(-50%)",
+    zIndex: 4,
+    pointerEvents: "none",
+    whiteSpace: "nowrap",
+  },
   keysArea: {
     display: "flex",
     flexDirection: "column",
@@ -747,13 +787,13 @@ const s = {
   },
   key: {
     flex: 1, padding: "0", height: "68px", borderRadius: "10px",
-    background: "transparent", border: "1px solid rgba(255,255,255,0.1)",
-    color: "rgba(255,255,255,0.75)", fontSize: "17px", cursor: "pointer", transition: "background 0.1s",
+    background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
+    color: "rgba(255,255,255,0.85)", fontSize: "17px", cursor: "pointer", transition: "background 0.1s",
   },
   unselectedKey: {
-    borderColor: "rgba(255,255,255,0.1)",
-    background: "transparent",
-    color: "rgba(255,255,255,0.75)",
+    borderColor: "rgba(255,255,255,0.08)",
+    background: "rgba(255,255,255,0.03)",
+    color: "rgba(255,255,255,0.85)",
     fontWeight: "400",
     boxShadow: "none",
     transform: "none",
@@ -761,61 +801,73 @@ const s = {
   letterKey: {
     height: "75px",
   },
-  bsKey: { background: "transparent", color: "rgba(255,255,255,0.75)" },
+  bsKey: { background: "rgba(255,255,255,0.03)", color: "rgba(255,255,255,0.85)" },
   unselectedBackspaceKey: {
-    borderColor: "rgba(255,255,255,0.1)",
-    background: "transparent",
-    color: "rgba(255,255,255,0.75)",
+    borderColor: "rgba(255,255,255,0.08)",
+    background: "rgba(255,255,255,0.03)",
+    color: "rgba(255,255,255,0.85)",
     fontWeight: "400",
     boxShadow: "none",
     transform: "none",
   },
   doneKey: {
-    background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.5)",
+    background: "rgba(255,255,255,0.11)", border: "1px solid rgba(255,255,255,0.22)", color: "rgba(255,255,255,1)",
     fontWeight: "600", transition: "background 0.1s",
   },
   unselectedDoneKey: {
-    borderColor: "rgba(255,255,255,0.1)",
-    background: "rgba(255,255,255,0.05)",
-    color: "rgba(255,255,255,0.5)",
+    borderColor: "rgba(255,255,255,0.22)",
+    background: "rgba(255,255,255,0.11)",
+    color: "rgba(255,255,255,1)",
     fontWeight: "600",
     boxShadow: "none",
     transform: "none",
   },
+  doneSelectedKey: {
+    borderColor: "rgba(255,255,255,0.34)",
+    background: "rgba(255,255,255,0.18)",
+    color: "rgba(255,255,255,1)",
+    fontWeight: "700",
+  },
+  doneHoverKey: {
+    borderColor: "rgba(255,255,255,0.42)",
+    background: "rgba(255,255,255,0.24)",
+    color: "rgba(255,255,255,1)",
+    fontWeight: "700",
+  },
   toggleKeyOn: {
-    background: "rgba(255,255,255,0.05)",
-    border: "1px solid rgba(255,255,255,0.1)",
-    color: "rgba(255,255,255,0.5)",
+    background: "rgba(255,255,255,0.03)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    color: "rgba(255,255,255,0.85)",
     fontWeight: "700",
     transition: "background 0.15s ease",
   },
   unselectedToggleOnKey: {
-    borderColor: "rgba(255,255,255,0.1)",
-    background: "rgba(255,255,255,0.05)",
-    color: "rgba(255,255,255,0.5)",
+    borderColor: "rgba(255,255,255,0.08)",
+    background: "rgba(255,255,255,0.03)",
+    color: "rgba(255,255,255,0.85)",
     fontWeight: "700",
     boxShadow: "none",
     transform: "none",
   },
   toggleKeyOff: {
-    background: "rgba(255,255,255,0.05)",
-    border: "1px solid rgba(255,255,255,0.1)",
-    color: "rgba(255,255,255,0.5)",
+    background: "rgba(255,255,255,0.03)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    color: "rgba(255,255,255,0.85)",
     fontWeight: "600",
     transition: "background 0.15s ease",
   },
   unselectedToggleOffKey: {
-    borderColor: "rgba(255,255,255,0.1)",
-    background: "rgba(255,255,255,0.05)",
-    color: "rgba(255,255,255,0.5)",
+    borderColor: "rgba(255,255,255,0.08)",
+    background: "rgba(255,255,255,0.03)",
+    color: "rgba(255,255,255,0.85)",
     fontWeight: "600",
     boxShadow: "none",
     transform: "none",
   },
   selectedKey: {
-    borderColor: "rgba(255,255,255,0.35)",
-    background: "rgba(255,255,255,0.14)",
-    color: "rgba(255,255,255,0.98)",
+    borderColor: "rgba(255,255,255,0.4)",
+    background: "rgba(255,255,255,0.08)",
+    color: "rgba(255,255,255,1)",
     fontWeight: "600",
   },
 };
