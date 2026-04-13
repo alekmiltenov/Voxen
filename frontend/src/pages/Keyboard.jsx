@@ -203,6 +203,18 @@ export default function Keyboard() {
     navigate(returnTo, { state: { words: allWords, ...extraState } });
   }
 
+  function speakCurrentText() {
+    const words = currentTextWords();
+    if (!words.length) return;
+
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(new SpeechSynthesisUtterance(words.join(" ")));
+    }
+
+    apiPost("/vocab/sentence", { words }).catch(() => {});
+  }
+
   function pressKey(key) {
     if (key === "DELETE") setText(t => t.slice(0, -1));
     else setText(t => t + key.toLowerCase());
@@ -216,7 +228,7 @@ export default function Keyboard() {
       setEyeHoldRepeatEnabled(!eyeHoldRepeatEnabledRef.current);
       return;
     }
-    if (key === "DONE") { void persistAndReturn(); return; }
+    if (key === "DONE") { speakCurrentText(); return; }
     pressKey(key);
   }
 
@@ -345,10 +357,6 @@ export default function Keyboard() {
     return () => unregister();
   }, [register, unregister]);
 
-  function done() {
-    void persistAndReturn();
-  }
-
   function appendPastedText(raw) {
     const normalized = String(raw || "")
       .replace(/\r\n|\r|\n/g, " ")
@@ -399,7 +407,7 @@ export default function Keyboard() {
 
       if (e.key === "Enter") {
         e.preventDefault();
-        done();
+        speakCurrentText();
         return;
       }
 
@@ -417,7 +425,7 @@ export default function Keyboard() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [done, persistAndReturn]);
+  }, [speakCurrentText, persistAndReturn]);
 
   useEffect(() => {
     const onPaste = (e) => {
@@ -573,6 +581,10 @@ export default function Keyboard() {
               ...s.key,
               ...s.doneKey,
               flex: 0.7,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "8px",
               ...((!enabled && hoveredKey === "done")
                 ? s.doneHoverKey
                 : ((enabled && !scanEnabled && selRow === 3 && selCol === 2)
@@ -584,10 +596,14 @@ export default function Keyboard() {
             onMouseLeave={() => setHoveredKey(null)}
             onClick={() => {
               setSelection(3, 2);
-              done();
+              speakCurrentText();
             }}
           >
-            Done
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="18" height="18" aria-hidden="true">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+              <path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07" />
+            </svg>
+            <span>Speak</span>
           </button>
           {(mode === "eyes" || mode === "cnn") && (
             <button style={{
