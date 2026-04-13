@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { apiPost } from "../api";
-import { useInputControl } from "./InputControlContext";
+import { useInputControl } from "./InputControlContextV2";
 import { GazeIndicator } from "../components/EyeTrackingDebug";
 
 const ROWS = [

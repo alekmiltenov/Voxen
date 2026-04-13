@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useInputControl } from "./InputControlContext";
+import { useInputControl } from "./InputControlContextV2";
 import { apiGet, apiPost } from "../api";
 
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));

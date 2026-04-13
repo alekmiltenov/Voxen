@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiPost } from "../api";
-import { useInputControl } from "./InputControlContext";
+import { useInputControl } from "./InputControlContextV2";
 
 const ACTIONS = [
   { id: 2, label: "Emergency", sub: "Immediate alert" },

@@ -27,7 +27,7 @@
 const char* ssid = "Kamen's A34";
 const char* password = "cumenenazi";
 // SERVER
-const char* host = "10.49.87.128"; // <-- сложи твоя IP
+const char* host = "10.240.220.128"; // <-- сложи твоя IP
 const int port = 8000;
 const char* path = "/ws/esp32/camera";
 

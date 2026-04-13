@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { apiPost, createSuggestSocket } from "../api";
-import { useInputControl } from "./InputControlContext";
+import { useInputControl } from "./InputControlContextV2";
 
 const DEFAULT_FEEDBACK_TEXT = "";
 

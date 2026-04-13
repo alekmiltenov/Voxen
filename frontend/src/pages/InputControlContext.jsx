@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
+/*import { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
 import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 
 // ── Server addresses ──────────────────────────────────────────────────────────
@@ -166,6 +166,7 @@ export function InputControlProvider({ children }) {
   const lastRepeatRef     = useRef(0);  const lastDirectionRef  = useRef(null);     // NEW: Track last direction
   const lastDirectionTimeRef = useRef(0);     // NEW: Track when last direction changed
   const lastGazePointRef  = useRef({ x: 0, y: 0 }); // NEW: For hysteresis
+  
   // keep refs in sync
   useEffect(() => { modeRef.current = mode; }, [mode]);
   useEffect(() => { holdDurationRef.current = holdDuration; }, [holdDuration]);
@@ -923,7 +924,7 @@ export function InputControlProvider({ children }) {
     >
       {children}
 
-      {/* ── Global status pill ── */}
+      {/* ── Global status pill ── *}
       <div style={{
         position: "fixed", bottom: 24, right: 24,
         display: "flex", alignItems: "center", gap: 8,
@@ -1044,4 +1045,4 @@ function median(vals) {
   const s = [...vals].sort((a, b) => a - b);
   const m = Math.floor(s.length / 2);
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
-}
+}*/
