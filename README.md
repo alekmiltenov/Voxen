@@ -1,8 +1,8 @@
-# Voxen – AI-powered adaptive communication system for people with motor and speech impairments
+# Voxen - AI-powered adaptive communication system for people with motor and speech impairments
 
 ---
 
-## 🧠 Description
+## Description
 
 Voxen is an adaptive communication system designed for people with severe motor and speech disabilities who cannot use traditional interfaces like keyboards, mice, or touchscreens.
 
@@ -28,43 +28,43 @@ The result is a system that restores **communication, independence, and dignity*
 
 ---
 
-## 🎯 Features
+## Features
 
-- 👁️ **Eye Tracking Input**
+- **Eye Tracking Input**
   - Laptop camera-based tracking
   - Raspberry Pi camera (high-precision single-eye tracking)
 
-- 🧠 **Sensor-Based Control**
+- **Sensor-Based Control**
   - ESP32 + accelerometer
   - Head movement mapped to navigation commands
 
-- 🔀 **Multi-Input System**
+- **Multi-Input System**
   - Switch seamlessly between input methods
   - Fully adaptive to user capabilities
 
-- 🤖 **AI Phrase Suggestions**
+- **AI Phrase Suggestions**
   - Powered by DistilGPT logits
   - Personalized using MongoDB n-grams
   - Real-time suggestions via WebSocket
 
-- 💬 **AI Assistant Chat**
+- **AI Assistant Chat**
   - Integrated conversational assistant (Groq API)
 
-- 🔊 **Text-to-Speech Output**
+- **Text-to-Speech Output**
   - Instant speech feedback for words and full sentences
 
-- 🧩 **Adaptive Communication UI**
+- **Adaptive Communication UI**
   - Starter phrases → dynamic suggestions → sentence building
 
-- ❤️ **Pain Communication System**
+- **Pain Communication System**
   - Select body area → system verbalizes pain location
 
-- 🚨 **Emergency System**
+- **Emergency System**
   - Trigger alert to caregiver (SMS integration)
 
 ---
 
-## 🏗️ How It Works (Architecture)
+## How It Works (Architecture)
 
 ### Frontend
 - React + Vite
@@ -96,7 +96,7 @@ The result is a system that restores **communication, independence, and dignity*
 
 ---
 
-## ⚙️ Installation
+## Installation
 
 ### Clone the repository
 ```bash
