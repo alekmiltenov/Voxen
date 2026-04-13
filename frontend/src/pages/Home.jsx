@@ -53,15 +53,14 @@ export default function Home() {
         if (cmd === "FORWARD") navigate(CARDS[selRef.current].route);
 
       } else if (mode === "cnn") {
-        if (cmd === "UP"   || cmd === "LEFT")  setSel(0);
-        if (cmd === "DOWN" || cmd === "RIGHT") setSel(1);
+        if (cmd === "LEFT")  setSel(0);
+        if (cmd === "RIGHT") setSel(1);
         if (cmd === "FORWARD") navigate(CARDS[selRef.current].route);
 
-      } else {
+      } else if (mode === "eyes") {
         let newIdx = null;
-        if (cmd === "UP")   newIdx = 0;
-        if (cmd === "DOWN") newIdx = 1;
-        if (cmd === "LEFT") newIdx = 0;
+        if (cmd === "LEFT")  newIdx = 0;
+        if (cmd === "RIGHT") newIdx = 1;
 
         if (newIdx !== null) {
           setSel(newIdx);
@@ -73,6 +72,8 @@ export default function Home() {
           }
         }
 
+        if (cmd === "FORWARD") navigate(CARDS[selRef.current].route);
+      } else {
         if (cmd === "FORWARD") navigate(CARDS[selRef.current].route);
       }
     });
@@ -163,7 +164,11 @@ export default function Home() {
 
               {enabled && (
                 <span style={s.hint}>
-                  {mode === "head" ? (i === 0 ? "← LEFT" : "RIGHT →") : (i === 0 ? "↑ HOLD UP" : "↓ HOLD DOWN")}
+                  {mode === "head" || mode === "cnn"
+                    ? (i === 0 ? "← LEFT" : "RIGHT →")
+                    : mode === "eyes"
+                      ? (i === 0 ? "← HOLD LEFT" : "HOLD RIGHT →")
+                      : (i === 0 ? "↑ HOLD UP" : "↓ HOLD DOWN")}
                 </span>
               )}
             </button>
@@ -173,9 +178,11 @@ export default function Home() {
 
       {enabled && (
         <p style={s.legend}>
-          {mode === "head"
+          {mode === "head" || mode === "cnn"
             ? "LEFT / RIGHT · select     FORWARD · confirm"
-            : "↑ UP · Communicate     ↓ DOWN · Actions     HOLD to confirm"}
+            : mode === "eyes"
+              ? "← LEFT · Communicate     → RIGHT · Actions     HOLD to confirm"
+              : "↑ UP · Communicate     ↓ DOWN · Actions     HOLD to confirm"}
         </p>
       )}
     </div>
