@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Home        from "./pages/Home";
 import Communicate from "./pages/Communicate";
+import Compose     from "./pages/Compose";
 import Actions     from "./pages/Actions";
 import Keyboard    from "./pages/Keyboard";
 import AIChat      from "./pages/AIChat";
@@ -17,6 +18,7 @@ function App() {
         <Routes>
           <Route path="/"            element={<Home />} />
           <Route path="/communicate" element={<Communicate />} />
+          <Route path="/compose"     element={<Compose />} />
           <Route path="/actions"     element={<Actions />} />
           <Route path="/pain"        element={<Pain />} />
           <Route path="/keyboard"    element={<Keyboard />} />
