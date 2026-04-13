@@ -325,10 +325,10 @@ export default function Communicate() {
         <div style={s.starterBody}>
           <p style={s.starterHint}>
             {!enabled ? "Start with…"
-              : mode === "head" ? "🎮 HEAD: Use LEFT/RIGHT/UP/DOWN to browse · FORWARD to select · BACK to exit"
-              : mode === "eyes" ? "👁️ EYES: Use LEFT/RIGHT/UP/DOWN to browse · FORWARD to select"
-              : mode === "cnn" ? "🧠 CNN: Use LEFT/RIGHT/UP/DOWN to browse · FORWARD to select"
-              : mode === "custom" ? "🧭 CUSTOM: Commands follow your action-source bindings"
+              : mode === "head" ? "HEAD: Use LEFT/RIGHT/UP/DOWN to browse · FORWARD to select · BACK to exit"
+              : mode === "eyes" ? "EYES: Use LEFT/RIGHT/UP/DOWN to browse · FORWARD to select"
+              : mode === "cnn" ? "CNN: Use LEFT/RIGHT/UP/DOWN to browse · FORWARD to select"
+              : mode === "custom" ? "CUSTOM: Commands follow your action-source bindings"
               : "Select a starter…"}
           </p>
           <div style={s.starterGrid}>
