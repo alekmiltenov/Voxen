@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useInputControl } from "./InputControlContext";
+import { useInputControl } from "./InputControlContextV2";
 import { focusRing, focusedStyle, unfocusedBorderColor } from "../utils/focusStyle";
 
 const CARDS = [

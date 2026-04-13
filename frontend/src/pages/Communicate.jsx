@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { apiGet } from "../api";
-import { useInputControl } from "./InputControlContext";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+import { apiGet, apiPost, createSuggestSocket } from "../api";
+import { useInputControl } from "./InputControlContextV2";
 
 const DEFAULT_STARTERS = [
   "I", "I need", "I want", "I feel",

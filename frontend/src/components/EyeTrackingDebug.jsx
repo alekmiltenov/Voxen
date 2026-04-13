@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useInputControl } from "../pages/InputControlContext";
+import { useInputControl } from "../pages/InputControlContextV2";
 import { useLocation } from "react-router-dom";
 
 /**

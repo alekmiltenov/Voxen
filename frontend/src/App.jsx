@@ -7,7 +7,7 @@ import Keyboard    from "./pages/Keyboard";
 import AIChat      from "./pages/AIChat";
 import Pain        from "./pages/Pain";
 import CaretakerDashboard from "./pages/caretaker/CaretakerDashboard";
-import { InputControlProvider } from "./pages/InputControlContext";
+import { InputControlProvider } from "./pages/InputControlContextV2";
 import Settings from "./pages/Settings";
 import EyeTrackingDebug from "./components/EyeTrackingDebug";
 
