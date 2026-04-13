@@ -16,6 +16,32 @@ const getBottomRow = (mode) => (
     : ["DELETE", "SPACE", "DONE"]
 );
 
+const SCAN_MIN_MS = 300;
+const SCAN_MAX_MS = 1500;
+const SCAN_STEP_MS = 100;
+const SCAN_EYES_SELECTION_METHOD = "down";
+const SCAN_EYES_DWELL_MS = 650;
+
+const getInitialScanEnabled = () => {
+  try {
+    return localStorage.getItem("keyboardAutoScanEnabled") === "1";
+  } catch {
+    return false;
+  }
+};
+
+const getInitialScanMs = () => {
+  try {
+    const saved = parseInt(localStorage.getItem("keyboardAutoScanMs") || "", 10);
+    if (Number.isFinite(saved)) {
+      return Math.max(SCAN_MIN_MS, Math.min(SCAN_MAX_MS, saved));
+    }
+    return 800;
+  } catch {
+    return 800;
+  }
+};
+
 export default function Keyboard() {
   const navigate      = useNavigate();
   const location      = useLocation();
@@ -37,10 +63,24 @@ export default function Keyboard() {
   const [selRow, setSelRow] = useState(0);
   const [selCol, setSelCol] = useState(0);
   const [hoveredKey, setHoveredKey] = useState(null);
+  const [scanEnabled, setScanEnabled] = useState(getInitialScanEnabled);
+  const [scanMs, setScanMs] = useState(getInitialScanMs);
+  const [scanPhase, setScanPhase] = useState("row"); // row | item
+  const [scanRow, setScanRow] = useState(0);
+  const [scanCol, setScanCol] = useState(0);
+  const [scanPulse, setScanPulse] = useState(false);
   const modeRef = useRef(mode);
   const eyeHoldRepeatEnabledRef = useRef(eyeHoldRepeatEnabled);
   const selRowRef = useRef(0);
   const selColRef = useRef(0);
+  const scanEnabledRef = useRef(scanEnabled);
+  const scanPhaseRef = useRef(scanPhase);
+  const scanRowRef = useRef(scanRow);
+  const scanColRef = useRef(scanCol);
+  const scanPulseTimerRef = useRef(null);
+  const scanEyesPrevSelectionMethodRef = useRef(null);
+  const scanEyesPrevSelectionDwellRef = useRef(null);
+  const scanEyesOverrideActiveRef = useRef(false);
 
   const NAV_ROWS = [
     ROWS[0],
@@ -66,6 +106,86 @@ export default function Keyboard() {
     eyeHoldRepeatEnabledRef.current = eyeHoldRepeatEnabled;
   }, [eyeHoldRepeatEnabled]);
 
+  useEffect(() => {
+    scanEnabledRef.current = scanEnabled;
+    try { localStorage.setItem("keyboardAutoScanEnabled", scanEnabled ? "1" : "0"); } catch {}
+  }, [scanEnabled]);
+
+  useEffect(() => {
+    scanPhaseRef.current = scanPhase;
+  }, [scanPhase]);
+
+  useEffect(() => {
+    scanRowRef.current = scanRow;
+  }, [scanRow]);
+
+  useEffect(() => {
+    scanColRef.current = scanCol;
+  }, [scanCol]);
+
+  useEffect(() => {
+    try { localStorage.setItem("keyboardAutoScanMs", String(scanMs)); } catch {}
+  }, [scanMs]);
+
+  const restoreScanEyesOverrides = () => {
+    if (!scanEyesOverrideActiveRef.current) return;
+
+    try {
+      if (scanEyesPrevSelectionMethodRef.current === null) {
+        localStorage.removeItem("eyeSelectionMethod");
+      } else {
+        localStorage.setItem("eyeSelectionMethod", scanEyesPrevSelectionMethodRef.current);
+      }
+
+      if (scanEyesPrevSelectionDwellRef.current === null) {
+        localStorage.removeItem("eyeSelectionDwell");
+      } else {
+        localStorage.setItem("eyeSelectionDwell", scanEyesPrevSelectionDwellRef.current);
+      }
+    } catch {}
+
+    scanEyesOverrideActiveRef.current = false;
+    scanEyesPrevSelectionMethodRef.current = null;
+    scanEyesPrevSelectionDwellRef.current = null;
+  };
+
+  useEffect(() => {
+    const shouldApplyScanEyesOverrides = enabled && scanEnabled && mode === "eyes";
+
+    if (!shouldApplyScanEyesOverrides) {
+      restoreScanEyesOverrides();
+      return;
+    }
+
+    try {
+      if (!scanEyesOverrideActiveRef.current) {
+        scanEyesPrevSelectionMethodRef.current = localStorage.getItem("eyeSelectionMethod");
+        scanEyesPrevSelectionDwellRef.current = localStorage.getItem("eyeSelectionDwell");
+        scanEyesOverrideActiveRef.current = true;
+      }
+
+      localStorage.setItem("eyeSelectionMethod", SCAN_EYES_SELECTION_METHOD);
+      localStorage.setItem("eyeSelectionDwell", String(SCAN_EYES_DWELL_MS));
+    } catch {}
+  }, [enabled, scanEnabled, mode]);
+
+  useEffect(() => {
+    return () => {
+      if (scanPulseTimerRef.current) {
+        window.clearTimeout(scanPulseTimerRef.current);
+      }
+      restoreScanEyesOverrides();
+    };
+  }, []);
+
+  const triggerScanPulse = () => {
+    if (scanPulseTimerRef.current) {
+      window.clearTimeout(scanPulseTimerRef.current);
+    }
+    setScanPulse(true);
+    scanPulseTimerRef.current = window.setTimeout(() => setScanPulse(false), 140);
+  };
+
   async function persistAndReturn() {
     const allWords = currentTextWords();
     const prev = incomingWords.map(w => String(w).trim().toLowerCase()).filter(Boolean).join(" ");
@@ -88,8 +208,7 @@ export default function Keyboard() {
     else setText(t => t + key.toLowerCase());
   }
 
-  function activateSelectedKey(navRows) {
-    const key = navRows[selRowRef.current]?.[selColRef.current];
+  function activateKey(key) {
     if (!key) return;
     if (key === "DELETE") { setText(t => t.slice(0, -1)); return; }
     if (key === "SPACE") { setText(t => t + " "); return; }
@@ -97,8 +216,13 @@ export default function Keyboard() {
       setEyeHoldRepeatEnabled(!eyeHoldRepeatEnabledRef.current);
       return;
     }
-    if (key === "DONE")  { void persistAndReturn(); return; }
+    if (key === "DONE") { void persistAndReturn(); return; }
     pressKey(key);
+  }
+
+  function activateSelectedKey(navRows) {
+    const key = navRows[selRowRef.current]?.[selColRef.current];
+    activateKey(key);
   }
 
   useEffect(() => {
@@ -106,7 +230,36 @@ export default function Keyboard() {
     if (selRowRef.current === 3 && selColRef.current > lastRowLen - 1) {
       setSelection(3, lastRowLen - 1);
     }
+    if (scanRowRef.current === 3 && scanColRef.current > lastRowLen - 1) {
+      setScanCol(lastRowLen - 1);
+    }
   }, [mode]);
+
+  useEffect(() => {
+    if (!enabled || !scanEnabled) return;
+    setScanPhase("row");
+    setScanRow(0);
+    setScanCol(0);
+  }, [enabled, scanEnabled, mode]);
+
+  useEffect(() => {
+    if (!enabled || !scanEnabled) return;
+
+    const timer = window.setInterval(() => {
+      const rows = [ROWS[0], ROWS[1], ROWS[2], getBottomRow(modeRef.current)];
+
+      if (scanPhaseRef.current === "row") {
+        setScanRow(prev => (prev + 1) % rows.length);
+        return;
+      }
+
+      const rowIdx = scanRowRef.current;
+      const len = rows[rowIdx]?.length || 1;
+      setScanCol(prev => (prev + 1) % len);
+    }, scanMs);
+
+    return () => window.clearInterval(timer);
+  }, [enabled, scanEnabled, scanMs, mode]);
 
   useEffect(() => {
     register((cmd) => {
@@ -122,7 +275,32 @@ export default function Keyboard() {
       const rowLen = navRows[row]?.length || 1;
 
       if (cmd === "BACK") {
+        if (scanEnabledRef.current && scanPhaseRef.current === "item") {
+          triggerScanPulse();
+          setScanPhase("row");
+          setScanCol(0);
+          return;
+        }
         void persistAndReturn();
+        return;
+      }
+
+      if (scanEnabledRef.current) {
+        if (cmd !== "FORWARD") return;
+
+        triggerScanPulse();
+
+        if (scanPhaseRef.current === "row") {
+          setScanRow(scanRowRef.current);
+          setScanCol(0);
+          setScanPhase("item");
+          return;
+        }
+
+        const key = navRows[scanRowRef.current]?.[scanColRef.current];
+        activateKey(key);
+        setScanPhase("row");
+        setScanCol(0);
         return;
       }
 
@@ -259,6 +437,35 @@ export default function Keyboard() {
           )}
           <span style={s.label}>Keyboard</span>
         </div>
+
+        {enabled && (
+          <div style={s.scanControlsWrap}>
+            <button
+              style={{ ...s.scanToggleBtn, ...(scanEnabled ? s.scanToggleBtnOn : {}) }}
+              onClick={() => setScanEnabled(v => !v)}
+            >
+              {scanEnabled ? "Scan ON" : "Scan OFF"}
+            </button>
+
+            {scanEnabled && (
+              <div style={s.scanSpeedWrap}>
+                <button
+                  style={s.scanStepBtn}
+                  onClick={() => setScanMs(ms => Math.max(SCAN_MIN_MS, ms - SCAN_STEP_MS))}
+                >
+                  -
+                </button>
+                <span style={s.scanSpeedValue}>{scanMs}ms</span>
+                <button
+                  style={s.scanStepBtn}
+                  onClick={() => setScanMs(ms => Math.min(SCAN_MAX_MS, ms + SCAN_STEP_MS))}
+                >
+                  +
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div style={s.display}>
@@ -268,8 +475,9 @@ export default function Keyboard() {
       </div>
 
       <div style={s.keysArea}>
+        {/*
         {enabled && (
-          <div style={s.statusOverlayRow}>
+          <div style={{ ...s.statusOverlayRow, ...(scanPulse ? s.statusOverlayPulse : {}) }}>
             <div style={s.headHint}>
               {mode === "head"
                 ? <>Head control active - tilt <strong>BACK</strong> to return</>
@@ -278,16 +486,25 @@ export default function Keyboard() {
             <p style={s.stateIndicator}>{eyeStateLabel()}</p>
           </div>
         )}
+        */}
 
         {ROWS.map((row, ri) => (
-          <div key={ri} style={{ ...s.row, ...s.letterRow }}>
+          <div
+            key={ri}
+            style={{
+              ...s.row,
+              ...s.letterRow,
+              ...(enabled && scanEnabled && scanPhase === "row" && scanRow === ri ? s.scanRowActive : {}),
+            }}
+          >
             {row.map((key, ci) => {
               const keyId = `key-${ri}-${ci}`;
-              const isSelected = enabled && selRow === ri && selCol === ci;
+              const isSelected = enabled && !scanEnabled && selRow === ri && selCol === ci;
               const isHovered = !enabled && hoveredKey === keyId;
+              const isScanSelected = enabled && scanEnabled && scanPhase === "item" && scanRow === ri && scanCol === ci;
               return (
                 <button key={`${ri}-${ci}-${key}`}
-                  style={{ ...s.key, ...s.letterKey, ...((isSelected || isHovered) ? s.selectedKey : s.unselectedKey) }}
+                  style={{ ...s.key, ...s.letterKey, ...((isSelected || isHovered || isScanSelected) ? s.selectedKey : s.unselectedKey) }}
                   onMouseEnter={() => setHoveredKey(keyId)}
                   onMouseLeave={() => setHoveredKey(null)}
                   onClick={() => { setSelection(ri, ci); pressKey(key); }}>
@@ -298,13 +515,21 @@ export default function Keyboard() {
           </div>
         ))}
 
-        <div style={{ ...s.row, ...s.actionRow }}>
+        <div
+          style={{
+            ...s.row,
+            ...s.actionRow,
+            ...(enabled && scanEnabled && scanPhase === "row" && scanRow === 3 ? s.scanRowActive : {}),
+          }}
+        >
           <button
             style={{
               ...s.key,
               ...s.bsKey,
               flex: 0.7,
-              ...((enabled && selRow === 3 && selCol === 0) || (!enabled && hoveredKey === "delete")
+              ...((enabled && !scanEnabled && selRow === 3 && selCol === 0)
+                || (!enabled && hoveredKey === "delete")
+                || (enabled && scanEnabled && scanPhase === "item" && scanRow === 3 && scanCol === 0)
                 ? s.selectedKey
                 : s.unselectedBackspaceKey),
             }}
@@ -313,7 +538,15 @@ export default function Keyboard() {
             onClick={() => { setSelection(3, 0); setText(t => t.slice(0, -1)); }}>
             ⌫
           </button>
-          <button style={{ ...s.key, flex: 1, ...((enabled && selRow === 3 && selCol === 1) || (!enabled && hoveredKey === "space") ? s.selectedKey : s.unselectedKey) }}
+          <button style={{
+            ...s.key,
+            flex: 1,
+            ...((enabled && !scanEnabled && selRow === 3 && selCol === 1)
+              || (!enabled && hoveredKey === "space")
+              || (enabled && scanEnabled && scanPhase === "item" && scanRow === 3 && scanCol === 1)
+              ? s.selectedKey
+              : s.unselectedKey),
+          }}
             onMouseEnter={() => setHoveredKey("space")}
             onMouseLeave={() => setHoveredKey(null)}
             onClick={() => { setSelection(3, 1); setText(t => t + " "); }}>
@@ -324,7 +557,9 @@ export default function Keyboard() {
               ...s.key,
               ...s.doneKey,
               flex: 0.7,
-              ...((enabled && selRow === 3 && selCol === 2) || (!enabled && hoveredKey === "done")
+              ...((enabled && !scanEnabled && selRow === 3 && selCol === 2)
+                || (!enabled && hoveredKey === "done")
+                || (enabled && scanEnabled && scanPhase === "item" && scanRow === 3 && scanCol === 2)
                 ? s.selectedKey
                 : s.unselectedDoneKey),
             }}
@@ -342,7 +577,9 @@ export default function Keyboard() {
               ...s.key,
               ...(eyeHoldRepeatEnabled ? s.toggleKeyOn : s.toggleKeyOff),
               flex: 1.2,
-              ...((enabled && selRow === 3 && selCol === 3) || (!enabled && hoveredKey === "repeat")
+              ...((enabled && !scanEnabled && selRow === 3 && selCol === 3)
+                || (!enabled && hoveredKey === "repeat")
+                || (enabled && scanEnabled && scanPhase === "item" && scanRow === 3 && scanCol === 3)
                 ? s.selectedKey
                 : (eyeHoldRepeatEnabled ? s.unselectedToggleOnKey : s.unselectedToggleOffKey)),
             }}
@@ -382,6 +619,54 @@ const s = {
     justifyContent: "center",
     minWidth: 178,
     maxWidth: 178,
+  },
+  scanControlsWrap: {
+    position: "absolute",
+    top: "50%",
+    right: 0,
+    transform: "translateY(-50%)",
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    zIndex: 2,
+  },
+  scanToggleBtn: {
+    padding: "7px 12px",
+    borderRadius: "14px",
+    background: "transparent",
+    border: "1px solid rgba(255,255,255,0.16)",
+    color: "rgba(255,255,255,0.55)",
+    fontSize: "12px",
+    cursor: "pointer",
+    letterSpacing: "0.03em",
+  },
+  scanToggleBtnOn: {
+    borderColor: "rgba(255,255,255,0.3)",
+    background: "rgba(255,255,255,0.08)",
+    color: "rgba(255,255,255,0.9)",
+  },
+  scanSpeedWrap: {
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+  },
+  scanStepBtn: {
+    width: "24px",
+    height: "24px",
+    borderRadius: "50%",
+    border: "1px solid rgba(255,255,255,0.2)",
+    background: "transparent",
+    color: "rgba(255,255,255,0.65)",
+    fontSize: "13px",
+    cursor: "pointer",
+    lineHeight: 1,
+  },
+  scanSpeedValue: {
+    minWidth: "56px",
+    textAlign: "center",
+    fontSize: "12px",
+    color: "rgba(255,255,255,0.45)",
+    letterSpacing: "0.04em",
   },
   pill: {
     position: "absolute",
@@ -442,7 +727,16 @@ const s = {
     zIndex: 3,
     pointerEvents: "none",
   },
+  statusOverlayPulse: {
+    filter: "brightness(1.3)",
+  },
   row: { display: "flex", gap: "5px" },
+  scanRowActive: {
+    outline: "2px solid rgba(255,255,255,0.35)",
+    outlineOffset: "2px",
+    borderRadius: "12px",
+    transform: "scale(1.01)",
+  },
   actionRow: {
     width: "96%",
     alignSelf: "center",
