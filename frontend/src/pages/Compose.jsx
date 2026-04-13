@@ -186,8 +186,7 @@ export default function Compose() {
     if (!wordsToAdd.length) return;
 
     setAppendedWords((prev) => [...prev, ...wordsToAdd]);
-    setTimedFeedback("listening", `Added: "${phrase}"`, 2000);
-  }, [setTimedFeedback]);
+  }, []);
 
   const deleteBackspace = useCallback(() => {
     setAppendedWords((prev) => {
@@ -252,6 +251,28 @@ export default function Compose() {
     return map;
   }, [interactiveItems]);
 
+  const navRows = useMemo(() => {
+    const rows = [];
+    const suggestionIds = suggestions.map((_, idx) => `sugg-${idx}`);
+
+    for (let i = 0; i < suggestionIds.length; i += 4) {
+      rows.push(suggestionIds.slice(i, i + 4));
+    }
+
+    rows.push(["action-speak", "action-keyboard", "action-delete"]);
+    return rows;
+  }, [suggestions]);
+
+  const positionById = useMemo(() => {
+    const map = {};
+    navRows.forEach((row, rowIdx) => {
+      row.forEach((id, colIdx) => {
+        map[id] = { row: rowIdx, col: colIdx };
+      });
+    });
+    return map;
+  }, [navRows]);
+
   const setSel = useCallback((next) => {
     selRef.current = next;
     setSelIdx(next);
@@ -270,6 +291,8 @@ export default function Compose() {
       if (!total) return;
 
       const current = selRef.current;
+      const currentId = interactiveItems[current]?.id;
+      const currentPos = currentId ? positionById[currentId] : null;
 
       if (cmd === "BACK") {
         navigate("/communicate");
@@ -281,17 +304,50 @@ export default function Compose() {
         return;
       }
 
-      if (cmd === "UP" || cmd === "LEFT") {
-        setSel((current - 1 + total) % total);
+      if (!currentPos) return;
+
+      const moveTo = (rowIdx, colIdx) => {
+        const rowItems = navRows[rowIdx];
+        if (!rowItems?.length) return;
+
+        const targetCol = Math.max(0, Math.min(colIdx, rowItems.length - 1));
+        const targetId = rowItems[targetCol];
+        const targetIdx = indexById[targetId];
+        if (Number.isInteger(targetIdx)) {
+          setSel(targetIdx);
+        }
+      };
+
+      if (cmd === "LEFT") {
+        const rowItems = navRows[currentPos.row];
+        if (!rowItems?.length) return;
+        const nextCol = (currentPos.col - 1 + rowItems.length) % rowItems.length;
+        moveTo(currentPos.row, nextCol);
+        return;
       }
 
-      if (cmd === "DOWN" || cmd === "RIGHT") {
-        setSel((current + 1) % total);
+      if (cmd === "RIGHT") {
+        const rowItems = navRows[currentPos.row];
+        if (!rowItems?.length) return;
+        const nextCol = (currentPos.col + 1) % rowItems.length;
+        moveTo(currentPos.row, nextCol);
+        return;
+      }
+
+      if (cmd === "UP") {
+        const nextRow = Math.max(0, currentPos.row - 1);
+        moveTo(nextRow, currentPos.col);
+        return;
+      }
+
+      if (cmd === "DOWN") {
+        const nextRow = Math.min(navRows.length - 1, currentPos.row + 1);
+        moveTo(nextRow, currentPos.col);
       }
     });
 
     return () => unregister();
-  }, [interactiveItems, navigate, register, setSel, unregister]);
+  }, [indexById, interactiveItems, navRows, navigate, positionById, register, setSel, unregister]);
 
   if (!starterWords.length) return null;
 
