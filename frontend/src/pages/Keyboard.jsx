@@ -492,10 +492,17 @@ export default function Keyboard() {
       </div>
 
       <div style={s.display}>
-        <span style={text ? s.displayText : s.placeholder}>
-          {text || "Start typing…"}
-          <span style={s.cursor} aria-hidden="true" />
-        </span>
+        <input
+          type="text"
+          value={text}
+          readOnly
+          placeholder="Start typing…"
+          style={{
+            ...s.displayInput,
+            ...(text ? {} : { color: "rgba(255,255,255,0.2)" }),
+          }}
+          onClick={(e) => e.preventDefault()}
+        />
       </div>
 
       <div style={s.keysArea}>
@@ -743,12 +750,25 @@ const s = {
     whiteSpace: "nowrap",
   },
   display: {
-    marginTop: "10px",
+    marginTop: "20px",
     minHeight: "64px", padding: "14px 20px", borderRadius: "14px",
-    border: "1px solid rgba(255,255,255,0.08)", display: "flex", alignItems: "center",
+    border: "1px solid rgba(255,255,255,0.08)", display: "flex", alignItems: "center", marginLeft: "30px", marginRight: "30px", marginTop: "3%",
   },
   displayText: { fontSize: "26px", fontWeight: "300", color: "#ffffff" },
   placeholder: { fontSize: "20px", color: "rgba(255,255,255,0.2)" },
+  displayInput: {
+    fontSize: "26px",
+    fontWeight: "300",
+    color: "#ffffff",
+    background: "transparent",
+    border: "none",
+    outline: "none",
+    width: "100%",
+    padding: 0,
+    margin: 0,
+    fontFamily: "inherit",
+    caretColor: "rgba(255,255,255,0.55)",
+  },
   cursor: {
     display: "inline-block",
     width: "2px",
@@ -780,7 +800,7 @@ const s = {
     minHeight: 0,
     width: "90%",
     alignSelf: "center",
-    marginTop: "75px",
+    marginTop: "4%",
     marginBottom: "8px",
     justifyContent: "space-between",
     position: "relative",
