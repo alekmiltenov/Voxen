@@ -73,9 +73,11 @@ _mongo     = MongoClient(MONGO_URI)
 _db        = _mongo["voxen"]
 vocab_col  = _db["vocabulary"]   # {word, count, last_used}
 ngrams_col = _db["ngrams"]       # {context, next_word, count}
+starter_col = _db["starter_words"]  # {word, count, last_used} (sentence-initial words only)
 
 vocab_col.create_index("word",   unique=True)
 ngrams_col.create_index([("context", 1), ("next_word", 1)], unique=True)
+starter_col.create_index("word", unique=True)
 
 # ── In-memory caches (loaded once at startup) ─────────────────────────────────
 _vocab:  set  = set()   # all confirmed words
@@ -113,6 +115,26 @@ def _ngram_scores(context_words: list[str]) -> dict[str, float]:
                 scores[word] = NGRAM_WEIGHT * math.log(1 + count)
     return scores
 
+def _context_ranked_ngrams(context_words: list[str]) -> dict[str, tuple[str, int, int]]:
+    """
+    Return {lower_word: (original_word, count, context_rank)}.
+    context_rank: 0 for trigram match, 1 for bigram match.
+    If a word appears in both, trigram version wins.
+    """
+    ranked: dict[str, tuple[str, int, int]] = {}
+    for rank, ctx in enumerate(_ctx_keys(context_words)):
+        for word, count in _ngrams.get(ctx, {}).items():
+            key = word.lower()
+            prev = ranked.get(key)
+            if prev is None:
+                ranked[key] = (word, count, rank)
+                continue
+
+            _, prev_count, prev_rank = prev
+            if rank < prev_rank or (rank == prev_rank and count > prev_count):
+                ranked[key] = (word, count, rank)
+    return ranked
+
 def _merge(model_candidates: list, context_words: list[str], top_k: int) -> list:
     """
     Merge model predictions with personal ngram history.
@@ -125,17 +147,31 @@ def _merge(model_candidates: list, context_words: list[str], top_k: int) -> list
     language model has never ranked them highly.
     """
     ng = _ngram_scores(context_words)
+    ranked_ng = _context_ranked_ngrams(context_words)
 
     # Start with all model candidates, boosted where ngrams agree
     merged: dict[str, tuple[str, float]] = {}
     for word, score in model_candidates:
         key = word.lower()
-        merged[key] = (word, score + ng.get(key, 0.0))
+        # Strongly prioritize personal context matches:
+        # trigram match outranks generic LM ranking.
+        context_bonus = 0.0
+        if key in ranked_ng:
+            _, count, rank = ranked_ng[key]
+            context_bonus = (1000.0 if rank == 0 else 300.0) + math.log(1 + count)
+
+        merged[key] = (word, score + ng.get(key, 0.0) + context_bonus)
 
     # Inject ngram words that didn't make the model's shortlist
-    for word, ng_score in ng.items():
-        if word not in merged and _WORD_RE.match(word):
-            merged[word] = (word, ng_score)
+    for key, ng_score in ng.items():
+        if key in merged:
+            continue
+        if not _WORD_RE.match(key):
+            continue
+
+        word, count, rank = ranked_ng.get(key, (key, 1, 1))
+        context_bonus = (1000.0 if rank == 0 else 300.0) + math.log(1 + count)
+        merged[key] = (word, ng_score + context_bonus)
 
     return sorted(merged.values(), key=lambda x: x[1], reverse=True)[:top_k]
 
@@ -852,13 +888,38 @@ async def camera_stream():
 
 @app.get("/vocab/starters")
 def get_starters(limit: int = 8):
-    entries = list(
-        vocab_col.find({}, {"word": 1, "count": 1})
-        .sort("count", DESCENDING)
+    entries_by_count = list(
+        starter_col.find({}, {"word": 1, "count": 1})
+        .sort([("count", DESCENDING), ("last_used", DESCENDING)])
         .limit(limit)
     )
-    if entries:
-        return {"starters": [{"word": e["word"], "count": e.get("count", 0)} for e in entries]}
+
+    # Also include recently used words to surface newly typed starters quickly.
+    recent_entries = list(
+        starter_col.find({}, {"word": 1, "count": 1})
+        .sort("last_used", DESCENDING)
+        .limit(max(limit * 3, 12))
+    )
+
+    merged = []
+    seen = set()
+
+    # Prioritize most-recent entries first so newly typed starter words show up
+    # even when legacy high-frequency words already fill the top-k list.
+    for e in recent_entries + entries_by_count:
+        w = (e.get("word") or "").strip()
+        if not w:
+            continue
+        key = w.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append({"word": w, "count": e.get("count", 0)})
+        if len(merged) >= limit:
+            break
+
+    if merged:
+        return {"starters": merged}
     return {"starters": [{"word": w, "count": 0} for w in _DEFAULTS[:limit]]}
 
 # ── Vocab: store a completed sentence as ngrams ───────────────────────────────
@@ -881,6 +942,14 @@ def store_sentence(body: SentenceRequest):
         return {"status": "ok", "stored": 0}
 
     now = datetime.now(timezone.utc)
+
+    # Track sentence-initial word frequency separately for starter suggestions.
+    first_word = words[0]
+    starter_col.update_one(
+        {"word": first_word},
+        {"$inc": {"count": 1}, "$set": {"last_used": now}},
+        upsert=True,
+    )
 
     def _upsert_ngram(ctx: str, next_word: str):
         ngrams_col.update_one(

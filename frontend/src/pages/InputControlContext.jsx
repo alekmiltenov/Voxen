@@ -26,6 +26,19 @@ const getInitialCommandDelay = () => {
   } catch { return 350; }
 };
 
+const getInitialEyeHoldRepeatEnabled = () => {
+  try {
+    return localStorage.getItem("eyeHoldRepeatEnabled") === "1";
+  } catch { return false; }
+};
+
+const getInitialEyeHoldRepeatDelay = () => {
+  try {
+    const saved = localStorage.getItem("eyeHoldRepeatDelay");
+    return saved ? parseFloat(saved) : 180;
+  } catch { return 180; }
+};
+
 // ── Shared timing constants ───────────────────────────────────────────────────
 const AUTO_REPEAT_MS  = 600;
 
@@ -90,6 +103,8 @@ export function InputControlProvider({ children }) {
   const [eyeCentered, setEyeCentered] = useState(false);
   const [eyeTracking, setEyeTracking] = useState(false);
   const [eyeDebug,    setEyeDebug]    = useState(null); // NEW: Debug data for visualization
+  const [eyeHoldRepeatEnabled, setEyeHoldRepeatEnabledState] = useState(getInitialEyeHoldRepeatEnabled);
+  const [eyeHoldRepeatDelay, setEyeHoldRepeatDelayState] = useState(getInitialEyeHoldRepeatDelay);
 
   // ── CNN eye states ───────────────────────────────────────────────────────
   const [cnnReady,  setCnnReady]  = useState(false);
@@ -106,6 +121,8 @@ export function InputControlProvider({ children }) {
   const socketRef       = useRef(null);
   const centerSelectMinConfidenceRef = useRef(centerSelectMinConfidence);
   const centerSelectNoiseDeltaRef = useRef(centerSelectNoiseDelta);
+  const eyeHoldRepeatEnabledRef = useRef(eyeHoldRepeatEnabled);
+  const eyeHoldRepeatDelayRef = useRef(eyeHoldRepeatDelay);
 
   // ── MediaPipe refs ───────────────────────────────────────────────────────
   const videoRef          = useRef(null);
@@ -139,6 +156,11 @@ export function InputControlProvider({ children }) {
   const cnnSelectionDwellFiredRef = useRef(false); // Track if CNN selection dwell fired
   const cnnCenterConfidenceHistoryRef = useRef([]); // confidence history for CENTER-noise gating
   const cnnNavLockDirRef = useRef(null); // prevent repeated nav while holding same direction
+  const eyeNavLockDirRef = useRef(null); // prevent repeated eye-nav while holding same direction
+  const eyeRawDirRef = useRef(null);
+  const eyeRawStartRef = useRef(0);
+  const eyeStableDirRef = useRef(null);
+  const eyeStableFramesRef = useRef(0);
   const cnnLastCmdTimeRef = useRef(0);        // Track CNN command delay (CRITICAL FIX)
   const headLastCmdTimeRef = useRef(0);       // Track HEAD command delay (CRITICAL FIX)
   const lastRepeatRef     = useRef(0);  const lastDirectionRef  = useRef(null);     // NEW: Track last direction
@@ -149,6 +171,8 @@ export function InputControlProvider({ children }) {
   useEffect(() => { holdDurationRef.current = holdDuration; }, [holdDuration]);
   useEffect(() => { centerSelectMinConfidenceRef.current = centerSelectMinConfidence; }, [centerSelectMinConfidence]);
   useEffect(() => { centerSelectNoiseDeltaRef.current = centerSelectNoiseDelta; }, [centerSelectNoiseDelta]);
+  useEffect(() => { eyeHoldRepeatEnabledRef.current = eyeHoldRepeatEnabled; }, [eyeHoldRepeatEnabled]);
+  useEffect(() => { eyeHoldRepeatDelayRef.current = eyeHoldRepeatDelay; }, [eyeHoldRepeatDelay]);
   useEffect(() => { try { localStorage.setItem("controlMode", mode); } catch {} }, [mode]);
 
   // ── Register / unregister page handlers ──────────────────────────────────
@@ -280,6 +304,13 @@ export function InputControlProvider({ children }) {
       setEyeReady(false); setEyeCentered(false); setEyeTracking(false);
       autoCenterDone.current = false; autoCenterBuf.current = [];
       window.__irisHistory = []; window.__irisSmooth = null;
+      eyeNavLockDirRef.current = null;
+      eyeRawDirRef.current = null;
+      eyeRawStartRef.current = 0;
+      eyeStableDirRef.current = null;
+      eyeStableFramesRef.current = 0;
+      selectionDwellStartRef.current = null;
+      selectionDwellFiredRef.current = false;
       lastDirectionRef.current = null;
       lastDirectionTimeRef.current = 0;
       lastGazePointRef.current = { x: 0, y: 0 };
@@ -384,56 +415,136 @@ export function InputControlProvider({ children }) {
               const selectionMethod = getSelectionMethod(); // center/right/left/up/down
               const selectionDwell = getSelectionDwell();   // 500-3000ms
               const delayMs = commandDelayRef.current || 200;
+              const selectionMethodUpper = selectionMethod.toUpperCase();
 
-              // Check if current direction matches the configured selection method
-              if (direction === selectionMethod.toUpperCase()) {
-                // This is the selection direction - apply dwell timer
+              const strength = Math.hypot(gaze.x - centerRef.current.x, (gaze.y + yBiasRef.current) - centerRef.current.y);
+
+              const updateEyeDebug = (overrides = {}) => {
+                const start = selectionDwellStartRef.current;
+                const elapsed = start ? Math.max(0, now - start) : 0;
+                const progress = Math.max(0, Math.min(1, elapsed / Math.max(selectionDwell, 1)));
+                const remainingMs = Math.max(0, selectionDwell - elapsed);
+
+                setEyeDebug({
+                  gazeX: gaze.x.toFixed(3),
+                  gazeY: gaze.y.toFixed(3),
+                  centerX: centerRef.current.x.toFixed(3),
+                  centerY: centerRef.current.y.toFixed(3),
+                  direction,
+                  newDirection,
+                  distance: Math.hypot(gaze.x - centerRef.current.x, gaze.y - centerRef.current.y).toFixed(3),
+                  yBias: yBiasRef.current.toFixed(2),
+                  centerBuffer: centerBufferRef.current.toFixed(2),
+                  confidence: Math.max(0, Math.min(1, strength / 0.4)),
+                  selectionMethod: selectionMethodUpper,
+                  selectionDwell,
+                  selectionStartMs: start || null,
+                  navLockDir: eyeNavLockDirRef.current,
+                  repeatEnabled: eyeHoldRepeatEnabledRef.current,
+                  repeatDelayMs: Math.max(60, Number(eyeHoldRepeatDelayRef.current) || 180),
+                  progress,
+                  remainingMs,
+                  ...overrides,
+                });
+              };
+
+              // CENTER (look-away) resets lock/debounce, matching CNN unlock behavior.
+              if (direction === "CENTER") {
+                const hadSelectionHold = !!selectionDwellStartRef.current;
+                const holdElapsedMs = hadSelectionHold ? (now - selectionDwellStartRef.current) : 0;
+                const shouldReleaseNavigate =
+                  selectionMethodUpper !== "CENTER" &&
+                  hadSelectionHold &&
+                  !selectionDwellFiredRef.current &&
+                  holdElapsedMs >= SELECTION_RELEASE_NAV_MIN_MS;
+
+                if (shouldReleaseNavigate && (now - lastEyeCmdTimeRef.current) >= delayMs) {
+                  dispatch(selectionMethodUpper);
+                  lastEyeCmdTimeRef.current = now;
+                }
+
+                eyeNavLockDirRef.current = null;
+                eyeRawDirRef.current = null;
+                eyeStableDirRef.current = null;
+                eyeStableFramesRef.current = 0;
+                selectionDwellStartRef.current = null;
+                selectionDwellFiredRef.current = false;
+                updateEyeDebug({ progress: 0, remainingMs: selectionDwell, state: "center-neutral" });
+              } else if (direction === selectionMethodUpper) {
+                // Selection direction is exclusive: used only for dwell-to-select.
                 if (!selectionDwellStartRef.current) {
                   selectionDwellStartRef.current = now;
                   selectionDwellFiredRef.current = false;
                 } else if (!selectionDwellFiredRef.current && (now - selectionDwellStartRef.current) >= selectionDwell) {
-                  // Dwell time reached - fire FORWARD (select)
-                  selectionDwellFiredRef.current = true;
-                  console.log(`[Eyes] ${selectionMethod.toUpperCase()} dwell ${selectionDwell}ms → dispatching SELECT`);
-                  dispatch("FORWARD");
-                  lastEyeCmdTimeRef.current = now;
+                  if ((now - lastEyeCmdTimeRef.current) >= delayMs) {
+                    selectionDwellFiredRef.current = true;
+                    console.log(`[Eyes] ${selectionMethodUpper} dwell ${selectionDwell}ms → dispatch FORWARD`);
+                    dispatch("FORWARD");
+                    lastEyeCmdTimeRef.current = now;
+                  }
                 }
+
+                eyeRawDirRef.current = null;
+                eyeStableDirRef.current = null;
+                eyeStableFramesRef.current = 0;
+                updateEyeDebug({ state: "direction-hold" });
               } else {
-                // Not the selection direction - reset dwell
+                // Not on selection direction anymore: reset dwell.
                 selectionDwellStartRef.current = null;
                 selectionDwellFiredRef.current = false;
-              }
 
-              // ── OTHER DIRECTIONS (navigate without dwell) ──
-              if (direction !== selectionMethod.toUpperCase()) {
-                // This is a navigation direction (not the selection gesture)
-                if (dwellDirRef.current === direction) {
-                  // Already holding this direction - repeat with command delay
-                  if ((now - lastRepeatRef.current) >= delayMs) {
-                    lastRepeatRef.current = now;
-                    dispatch(direction);
-                    lastEyeCmdTimeRef.current = now;
+                // One-shot navigation lock: holding same direction should not auto-repeat.
+                if (eyeNavLockDirRef.current && direction === eyeNavLockDirRef.current) {
+                  if (eyeHoldRepeatEnabledRef.current) {
+                    const repeatDelayMs = Math.max(60, Number(eyeHoldRepeatDelayRef.current) || 180);
+                    if ((now - lastEyeCmdTimeRef.current) >= repeatDelayMs) {
+                      dispatch(direction);
+                      lastEyeCmdTimeRef.current = now;
+                    }
+                    updateEyeDebug({ state: "auto-repeat" });
+                  } else {
+                    updateEyeDebug({ state: "nav-locked" });
                   }
                 } else {
-                  // New direction - fire once and start repeat timer
-                  if ((now - lastEyeCmdTimeRef.current) >= delayMs) {
-                    dwellDirRef.current = direction;
-                    lastRepeatRef.current = now;
-                    lastEyeCmdRef.current = direction;
-                    lastEyeCmdTimeRef.current = now;
-                    dispatch(direction);
+                  // Debounce + stability gate before navigation dispatch.
+                  if (direction !== eyeRawDirRef.current) {
+                    eyeRawDirRef.current = direction;
+                    eyeRawStartRef.current = now;
+                    eyeStableFramesRef.current = 1;
+                  } else {
+                    eyeStableFramesRef.current += 1;
+                  }
+
+                  const isStable = direction !== null && (now - eyeRawStartRef.current) >= DEBOUNCE_MS;
+                  if (!isStable || eyeStableFramesRef.current < MIN_STABLE_FRAMES) {
+                    eyeStableDirRef.current = null;
+                    updateEyeDebug({ progress: 0, remainingMs: selectionDwell, state: "navigating" });
+                  } else {
+                    if (eyeStableDirRef.current !== direction) {
+                      if ((now - lastEyeCmdTimeRef.current) >= delayMs) {
+                        eyeStableDirRef.current = direction;
+                        lastEyeCmdRef.current = direction;
+                        lastEyeCmdTimeRef.current = now;
+                        eyeNavLockDirRef.current = direction;
+                        dispatch(direction);
+                      }
+                    }
+
+                    updateEyeDebug({ progress: 0, remainingMs: selectionDwell, state: "navigating" });
                   }
                 }
-              } else {
-                // Currently holding selection direction - don't dispatch as navigation
-                dwellDirRef.current = null;
-                lastRepeatRef.current = now;
               }
             }
           } else {
             noFaceFramesRef.current++;
             if (noFaceFramesRef.current > 30) { // Increased from 4 - more tolerant of frame drops
               setEyeTracking(false); lastEyeCmdRef.current = null;
+              eyeNavLockDirRef.current = null;
+              eyeRawDirRef.current = null;
+              eyeStableDirRef.current = null;
+              eyeStableFramesRef.current = 0;
+              selectionDwellStartRef.current = null;
+              selectionDwellFiredRef.current = false;
               window.__irisHistory = []; window.__irisSmooth = null;
             }
           }
@@ -462,6 +573,13 @@ export function InputControlProvider({ children }) {
     autoCenterBuf.current = []; autoCenterDone.current = false;
     centerRef.current = { x: 0, y: 0 };
     window.__irisHistory = []; window.__irisSmooth = null;
+    eyeNavLockDirRef.current = null;
+    eyeRawDirRef.current = null;
+    eyeRawStartRef.current = 0;
+    eyeStableDirRef.current = null;
+    eyeStableFramesRef.current = 0;
+    selectionDwellStartRef.current = null;
+    selectionDwellFiredRef.current = false;
     lastDirectionRef.current = null;
     lastDirectionTimeRef.current = 0;
     lastGazePointRef.current = { x: 0, y: 0 };
@@ -471,6 +589,17 @@ export function InputControlProvider({ children }) {
   const setYBias = useCallback((v) => { yBiasRef.current = v; }, []);
   const setCenterBuffer = useCallback((v) => { centerBufferRef.current = v; }, []);
   const setCommandDelay = useCallback((v) => { commandDelayRef.current = v; }, []);
+  const setEyeHoldRepeatEnabled = useCallback((value) => {
+    const next = !!value;
+    setEyeHoldRepeatEnabledState(next);
+    try { localStorage.setItem("eyeHoldRepeatEnabled", next ? "1" : "0"); } catch {}
+  }, []);
+  const setEyeHoldRepeatDelay = useCallback((value) => {
+    const n = Number(value);
+    const next = Number.isFinite(n) ? Math.max(60, Math.min(1200, n)) : 180;
+    setEyeHoldRepeatDelayState(next);
+    try { localStorage.setItem("eyeHoldRepeatDelay", String(next)); } catch {}
+  }, []);
   const setCenterSelectMinConfidence = useCallback((value) => {
     const n = Number(value);
     const next = Number.isFinite(n) ? Math.max(0.55, Math.min(0.99, n)) : 0.82;
@@ -529,6 +658,8 @@ export function InputControlProvider({ children }) {
           selectionDwell,
           selectionStartMs: start || null,
           navLockDir: cnnNavLockDirRef.current,
+          repeatEnabled: eyeHoldRepeatEnabledRef.current,
+          repeatDelayMs: Math.max(60, Number(eyeHoldRepeatDelayRef.current) || 180),
           progress,
           remainingMs,
           ...overrides,
@@ -649,7 +780,16 @@ export function InputControlProvider({ children }) {
 
       // One-shot navigation lock: if user keeps holding same direction, do not repeat.
       if (cnnNavLockDirRef.current && dir === cnnNavLockDirRef.current) {
-        updateCnnDebug({ state: "nav-locked" });
+        if (eyeHoldRepeatEnabledRef.current) {
+          const repeatDelayMs = Math.max(60, Number(eyeHoldRepeatDelayRef.current) || 180);
+          if ((now - cnnLastCmdTimeRef.current) >= repeatDelayMs) {
+            dispatch(dir);
+            cnnLastCmdTimeRef.current = now;
+          }
+          updateCnnDebug({ state: "auto-repeat" });
+        } else {
+          updateCnnDebug({ state: "nav-locked" });
+        }
         return;
       }
 
@@ -772,6 +912,8 @@ export function InputControlProvider({ children }) {
         sensorSettings, updateSensorSettings,
         // mediapipe eyes
         eyeReady, eyeCentered, eyeTracking, recenterEyes, setYBias, setCenterBuffer, setCommandDelay, eyeDebug,
+        eyeHoldRepeatEnabled, setEyeHoldRepeatEnabled,
+        eyeHoldRepeatDelay, setEyeHoldRepeatDelay,
         // cnn eyes
         cnnReady, gazeLabel,
         cnnDebug,

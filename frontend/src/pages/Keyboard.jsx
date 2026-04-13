@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { apiPost } from "../api";
 import { useInputControl } from "./InputControlContext";
+import { GazeIndicator } from "../components/EyeTrackingDebug";
 
 const ROWS = [
   ["Q","W","E","R","T","Y","U","I","O","P"],
@@ -12,46 +13,244 @@ const ROWS = [
 export default function Keyboard() {
   const navigate      = useNavigate();
   const location      = useLocation();
-  const { mode, enabled, register, unregister } = useInputControl();
+  const {
+    mode, enabled, register, unregister,
+    eyeReady, eyeCentered, eyeTracking,
+    eyeDebug,
+    eyeHoldRepeatEnabled, setEyeHoldRepeatEnabled,
+    cnnReady, gazeLabel, cnnDebug,
+  } = useInputControl();
 
   const incomingWords = location.state?.words ?? [];
   const returnTo      = location.state?.returnTo ?? "/communicate";
   const extraState    = location.state?.history ? { history: location.state.history } : {};
 
-  const [text, setText] = useState(incomingWords.join(" "));
+  const [text, setText] = useState(() => (
+    incomingWords.length ? `${incomingWords.join(" ")} ` : ""
+  ));
+  const [selRow, setSelRow] = useState(0);
+  const [selCol, setSelCol] = useState(0);
+  const modeRef = useRef(mode);
+  const eyeHoldRepeatEnabledRef = useRef(eyeHoldRepeatEnabled);
+  const selRowRef = useRef(0);
+  const selColRef = useRef(0);
+
+  const NAV_ROWS = [
+    ROWS[0],
+    ROWS[1],
+    ROWS[2],
+    (mode === "eyes" || mode === "cnn") ? ["SPACE", "TOGGLE_REPEAT", "DONE"] : ["SPACE", "DONE"],
+  ];
+
+  const currentTextWords = () => text.trim().split(/\s+/).filter(Boolean);
+
+  const setSelection = (r, c) => {
+    selRowRef.current = r;
+    selColRef.current = c;
+    setSelRow(r);
+    setSelCol(c);
+  };
 
   useEffect(() => {
-    register((cmd) => {
-      // CNN mode: keyboard is mouse-only, ignore all direction commands
-      if (mode === "cnn") return;
-      if (cmd === "BACK" || cmd === "LEFT")
-        navigate(returnTo, { state: { words: incomingWords, ...extraState } });
-    });
-    return () => unregister();
+    modeRef.current = mode;
   }, [mode]);
+
+  useEffect(() => {
+    eyeHoldRepeatEnabledRef.current = eyeHoldRepeatEnabled;
+  }, [eyeHoldRepeatEnabled]);
+
+  async function persistAndReturn() {
+    const allWords = currentTextWords();
+    const prev = incomingWords.map(w => String(w).trim().toLowerCase()).filter(Boolean).join(" ");
+    const next = allWords.map(w => String(w).trim().toLowerCase()).filter(Boolean).join(" ");
+    const changed = prev !== next;
+
+    if (changed && allWords.length > 0) {
+      try {
+        await apiPost("/vocab/sentence", { words: allWords });
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    navigate(returnTo, { state: { words: allWords, ...extraState } });
+  }
 
   function pressKey(key) {
     if (key === "⌫") setText(t => t.slice(0, -1));
     else setText(t => t + key.toLowerCase());
   }
 
-  function done() {
-    const allWords = text.trim().split(/\s+/).filter(Boolean);
-    const newWords = allWords.slice(incomingWords.length);
-    if (newWords.length > 0) {
-      apiPost("/vocab/sentence", { words: allWords }).catch(console.error);
+  function activateSelectedKey(navRows) {
+    const key = navRows[selRowRef.current]?.[selColRef.current];
+    if (!key) return;
+    if (key === "SPACE") { setText(t => t + " "); return; }
+    if (key === "TOGGLE_REPEAT") {
+      setEyeHoldRepeatEnabled(!eyeHoldRepeatEnabledRef.current);
+      return;
     }
-    navigate(returnTo, { state: { words: allWords, ...extraState } });
+    if (key === "DONE")  { void persistAndReturn(); return; }
+    pressKey(key);
   }
+
+  useEffect(() => {
+    const lastRowLen = NAV_ROWS[3].length;
+    if (selRowRef.current === 3 && selColRef.current > lastRowLen - 1) {
+      setSelection(3, lastRowLen - 1);
+    }
+  }, [mode]);
+
+  useEffect(() => {
+    register((cmd) => {
+      const navRows = [
+        ROWS[0],
+        ROWS[1],
+        ROWS[2],
+        (modeRef.current === "eyes" || modeRef.current === "cnn") ? ["SPACE", "TOGGLE_REPEAT", "DONE"] : ["SPACE", "DONE"],
+      ];
+      const row = selRowRef.current;
+      const col = selColRef.current;
+      const rowCount = navRows.length;
+      const rowLen = navRows[row]?.length || 1;
+
+      if (cmd === "BACK") {
+        void persistAndReturn();
+        return;
+      }
+
+      if (modeRef.current === "head") {
+        if (cmd === "LEFT")  setSelection(row, (col - 1 + rowLen) % rowLen);
+        if (cmd === "RIGHT") setSelection(row, (col + 1) % rowLen);
+        if (cmd === "FORWARD") activateSelectedKey(navRows);
+        return;
+      }
+
+      if (cmd === "UP") {
+        const nextRow = (row - 1 + rowCount) % rowCount;
+        const nextLen = navRows[nextRow].length;
+        setSelection(nextRow, Math.min(col, nextLen - 1));
+      }
+      if (cmd === "DOWN") {
+        const nextRow = (row + 1) % rowCount;
+        const nextLen = navRows[nextRow].length;
+        setSelection(nextRow, Math.min(col, nextLen - 1));
+      }
+      if (cmd === "LEFT") {
+        const curLen = navRows[row].length;
+        setSelection(row, (col - 1 + curLen) % curLen);
+      }
+      if (cmd === "RIGHT") {
+        const curLen = navRows[row].length;
+        setSelection(row, (col + 1) % curLen);
+      }
+      if (cmd === "FORWARD") {
+        activateSelectedKey(navRows);
+      }
+    });
+    return () => unregister();
+  }, [register, unregister]);
+
+  function done() {
+    void persistAndReturn();
+  }
+
+  function appendPastedText(raw) {
+    const normalized = String(raw || "")
+      .replace(/\r\n|\r|\n/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+
+    if (!normalized) return;
+
+    setText(t => {
+      if (!t) return normalized;
+      const needsSpace = !t.endsWith(" ");
+      return `${t}${needsSpace ? " " : ""}${normalized}`;
+    });
+  }
+
+  const eyeStateLabel = () => {
+    if (!enabled) return "";
+    if (mode === "eyes") {
+      if (!eyeReady) return "Eyes · init…";
+      if (!eyeCentered) return "Eyes · centering…";
+      return eyeTracking ? "Eyes · tracking" : "Eyes · no face";
+    }
+    if (mode === "cnn") {
+      return cnnReady ? `CNN · ${gazeLabel}` : "CNN · connecting…";
+    }
+    if (mode === "head") return "Head · active";
+    return "";
+  };
+
+  const indicatorDebug = mode === "eyes" ? eyeDebug : (mode === "cnn" ? cnnDebug : null);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      if (e.key === "Backspace") {
+        e.preventDefault();
+        setText(t => t.slice(0, -1));
+        return;
+      }
+
+      if (e.key === " ") {
+        e.preventDefault();
+        setText(t => t + " ");
+        return;
+      }
+
+      if (e.key === "Enter") {
+        e.preventDefault();
+        done();
+        return;
+      }
+
+      if (e.key === "Escape") {
+        e.preventDefault();
+        void persistAndReturn();
+        return;
+      }
+
+      if (/^[a-zA-Z]$/.test(e.key)) {
+        e.preventDefault();
+        setText(t => t + e.key.toLowerCase());
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [done, persistAndReturn]);
+
+  useEffect(() => {
+    const onPaste = (e) => {
+      const pasted = e.clipboardData?.getData("text");
+      if (!pasted) return;
+      e.preventDefault();
+      appendPastedText(pasted);
+    };
+
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, []);
 
   return (
     <div style={s.page}>
       <div style={s.topBar}>
         <button style={s.pill}
-          onClick={() => navigate(returnTo, { state: { words: incomingWords, ...extraState } })}>
+          onClick={() => void persistAndReturn()}>
           ← Back
         </button>
-        <span style={s.label}>Keyboard</span>
+        <div style={s.titleCluster}>
+          {enabled && indicatorDebug && (
+            <div style={s.compactIndicatorWrap}>
+              <GazeIndicator debug={indicatorDebug}/>
+            </div>
+          )}
+          <span style={s.label}>Keyboard</span>
+        </div>
         <div style={{ width: 80 }} />
       </div>
 
@@ -63,6 +262,8 @@ export default function Keyboard() {
         </div>
       )}
 
+      {enabled && <p style={s.stateIndicator}>{eyeStateLabel()}</p>}
+
       <div style={s.display}>
         <span style={text ? s.displayText : s.placeholder}>
           {text || "Start typing…"}
@@ -72,30 +273,42 @@ export default function Keyboard() {
       <div style={s.keysArea}>
         {ROWS.map((row, ri) => (
           <div key={ri} style={s.row}>
-            {row.map(key => (
-              <button key={key}
-                style={key === "⌫" ? { ...s.key, ...s.bsKey } : s.key}
-                onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.08)"}
-                onMouseLeave={e => e.currentTarget.style.background = key === "⌫"
-                  ? "rgba(255,255,255,0.05)" : "transparent"}
-                onClick={() => pressKey(key)}>
-                {key === "⌫" ? "⌫" : key.toLowerCase()}
-              </button>
-            ))}
+            {row.map((key, ci) => {
+              const isSelected = enabled && selRow === ri && selCol === ci;
+              return (
+                <button key={`${ri}-${ci}-${key}`}
+                  style={{ ...(key === "⌫" ? { ...s.key, ...s.bsKey } : s.key), ...(isSelected ? s.selectedKey : {}) }}
+                  onClick={() => { setSelection(ri, ci); pressKey(key); }}>
+                  {key === "⌫" ? "⌫" : key.toLowerCase()}
+                </button>
+              );
+            })}
           </div>
         ))}
 
         <div style={s.row}>
-          <button style={{ ...s.key, flex: 3 }}
-            onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.08)"}
-            onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-            onClick={() => setText(t => t + " ")}>
+          <button style={{ ...s.key, flex: 2, ...(enabled && selRow === 3 && selCol === 0 ? s.selectedKey : {}) }}
+            onClick={() => { setSelection(3, 0); setText(t => t + " "); }}>
             space
           </button>
-          <button style={{ ...s.key, ...s.doneKey, flex: 2 }}
-            onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.92)"}
-            onMouseLeave={e => e.currentTarget.style.background = "rgba(255,255,255,0.85)"}
-            onClick={done}>
+          {(mode === "eyes" || mode === "cnn") && (
+            <button style={{ ...s.key, ...(eyeHoldRepeatEnabled ? s.toggleKeyOn : s.toggleKeyOff), flex: 1.2, ...(enabled && selRow === 3 && selCol === 1 ? s.selectedKey : {}) }}
+              onClick={() => { setSelection(3, 1); setEyeHoldRepeatEnabled(!eyeHoldRepeatEnabled); }}>
+              {eyeHoldRepeatEnabled ? "Repeat ON" : "Repeat OFF"}
+            </button>
+          )}
+          <button
+            style={{
+              ...s.key,
+              ...s.doneKey,
+              flex: (mode === "eyes" || mode === "cnn") ? 1.8 : 3,
+              ...(enabled && selRow === 3 && selCol === ((mode === "eyes" || mode === "cnn") ? 2 : 1) ? s.selectedKey : {}),
+            }}
+            onClick={() => {
+              setSelection(3, (mode === "eyes" || mode === "cnn") ? 2 : 1);
+              done();
+            }}
+          >
             Done ↩
           </button>
         </div>
@@ -110,18 +323,38 @@ const s = {
     display: "flex", flexDirection: "column", padding: "16px", gap: "14px",
   },
   topBar: { display: "flex", justifyContent: "space-between", alignItems: "center" },
+  titleCluster: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+  },
+  compactIndicatorWrap: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 178,
+    maxWidth: 178,
+  },
   pill: {
     padding: "8px 18px", borderRadius: "20px", background: "transparent",
     border: "1px solid rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.4)",
     fontSize: "14px", cursor: "pointer", width: 80,
   },
   label: {
-    fontSize: "14px", color: "rgba(255,255,255,0.25)",
+    fontSize: "14px", color: "rgba(255,255,255,0.35)",
     letterSpacing: "0.1em", textTransform: "uppercase",
   },
   headHint: {
     textAlign: "center", fontSize: 13, color: "rgba(255,255,255,0.25)",
     letterSpacing: "0.04em", padding: "6px 0",
+  },
+  stateIndicator: {
+    margin: 0,
+    textAlign: "center",
+    fontSize: 12,
+    color: "rgba(134,239,172,0.9)",
+    letterSpacing: "0.06em",
+    textTransform: "uppercase",
   },
   display: {
     minHeight: "64px", padding: "14px 20px", borderRadius: "14px",
@@ -140,5 +373,27 @@ const s = {
   doneKey: {
     background: "rgba(255,255,255,0.85)", border: "none", color: "#111111",
     fontWeight: "600", transition: "background 0.1s",
+  },
+  toggleKeyOn: {
+    background: "rgba(34,197,94,0.16)",
+    border: "1px solid rgba(34,197,94,0.45)",
+    color: "rgba(187,247,208,0.98)",
+    fontWeight: "700",
+    transition: "background 0.15s ease",
+  },
+  toggleKeyOff: {
+    background: "rgba(148,163,184,0.14)",
+    border: "1px solid rgba(148,163,184,0.35)",
+    color: "rgba(226,232,240,0.95)",
+    fontWeight: "600",
+    transition: "background 0.15s ease",
+  },
+  selectedKey: {
+    borderColor: "rgba(34,197,94,1)",
+    boxShadow: "0 0 0 3px rgba(34,197,94,0.35)",
+    background: "rgba(34,197,94,0.20)",
+    color: "#ffffff",
+    transform: "scale(1.05)",
+    fontWeight: "700",
   },
 };

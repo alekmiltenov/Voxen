@@ -12,43 +12,11 @@ export default function EyeTrackingDebug() {
   const { mode, eyeDebug, cnnDebug } = useInputControl();
   const location = useLocation();
   const isSettingsPage = location.pathname === "/settings";
-  const showCnnIndicator = mode === "cnn" && ["/", "/communicate"].includes(location.pathname);
+  const showModeIndicator = ["/", "/communicate"].includes(location.pathname);
 
   if (mode === "eyes" && eyeDebug) {
-    // For non-Settings pages, show minimal direction indicator only
     if (!isSettingsPage) {
-      const directionColors = {
-        UP: "#4f46e5",
-        DOWN: "#ef4444",
-        LEFT: "#f59e0b",
-        RIGHT: "#10b981",
-        CENTER: "#8b5cf6",
-      };
-      const dirColor = directionColors[eyeDebug.direction] || "#6b7280";
-
-      return (
-        <div
-          style={{
-            position: "fixed",
-            top: 90,
-            left: "50%",
-            transform: "translateX(-50%)",
-            zIndex: 10000,
-            backgroundColor: "rgba(17, 24, 39, 0.92)",
-            border: "1.5px solid rgba(255, 255, 255, 0.15)",
-            borderRadius: "14px",
-            padding: "16px 28px",
-            fontFamily: "monospace",
-            fontSize: "18px",
-            fontWeight: "700",
-            color: dirColor,
-            boxShadow: "0 6px 20px rgba(0, 0, 0, 0.7)",
-            letterSpacing: "0.08em",
-          }}
-        >
-          {eyeDebug.direction}
-        </div>
-      );
+      return showModeIndicator ? <GazeIndicator debug={eyeDebug} /> : null;
     }
 
     // Settings page: full debug panel
@@ -57,14 +25,14 @@ export default function EyeTrackingDebug() {
     );
   }
 
-  if (showCnnIndicator && cnnDebug) {
-    return <CnnIndicator cnnDebug={cnnDebug} />;
+  if (mode === "cnn" && showModeIndicator && cnnDebug) {
+    return <GazeIndicator debug={cnnDebug} />;
   }
 
   return null;
 }
 
-function CnnIndicator({ cnnDebug }) {
+export function GazeIndicator({ debug, compact = false, embedded = false }) {
   const directionColors = {
     UP: "#4f46e5",
     DOWN: "#ef4444",
@@ -74,15 +42,15 @@ function CnnIndicator({ cnnDebug }) {
     NONE: "#6b7280",
   };
 
-  const dir = String(cnnDebug.direction || "NONE").toUpperCase();
+  const dir = String(debug.direction || "NONE").toUpperCase();
   const dirColor = directionColors[dir] || "#6b7280";
-  const conf = Number(cnnDebug.confidence || 0);
-  const [progress, setProgress] = useState(Math.max(0, Math.min(1, Number(cnnDebug.progress || 0))));
-  const remainingMs = Math.max(0, Number(cnnDebug.remainingMs || 0));
-  const selectionMethod = String(cnnDebug.selectionMethod || "RIGHT").toUpperCase();
-  const navLockDir = String(cnnDebug.navLockDir || "").toUpperCase();
+  const conf = Number(debug.confidence || 0);
+  const [progress, setProgress] = useState(Math.max(0, Math.min(1, Number(debug.progress || 0))));
+  const remainingMs = Math.max(0, Number(debug.remainingMs || 0));
+  const selectionMethod = String(debug.selectionMethod || "RIGHT").toUpperCase();
+  const navLockDir = String(debug.navLockDir || "").toUpperCase();
   const isSelecting = progress > 0;
-  const state = String(cnnDebug.state || "");
+  const state = String(debug.state || "");
 
   let statusText = "idle";
   if (state === "direction-hold" || state === "center-hold") {
@@ -93,13 +61,13 @@ function CnnIndicator({ cnnDebug }) {
 
   useEffect(() => {
     let raf = null;
-    const startMs = Number(cnnDebug.selectionStartMs || 0);
-    const dwell = Math.max(1, Number(cnnDebug.selectionDwell || 1));
+    const startMs = Number(debug.selectionStartMs || 0);
+    const dwell = Math.max(1, Number(debug.selectionDwell || 1));
 
     const tick = () => {
-      const active = (cnnDebug.state === "center-hold" || cnnDebug.state === "direction-hold") && startMs > 0;
+      const active = (debug.state === "center-hold" || debug.state === "direction-hold") && startMs > 0;
       if (!active) {
-        setProgress(Math.max(0, Math.min(1, Number(cnnDebug.progress || 0))));
+        setProgress(Math.max(0, Math.min(1, Number(debug.progress || 0))));
         return;
       }
 
@@ -111,34 +79,34 @@ function CnnIndicator({ cnnDebug }) {
 
     tick();
     return () => { if (raf) cancelAnimationFrame(raf); };
-  }, [cnnDebug.selectionStartMs, cnnDebug.selectionDwell, cnnDebug.state, cnnDebug.progress]);
+  }, [debug.selectionStartMs, debug.selectionDwell, debug.state, debug.progress]);
 
   return (
     <div
       style={{
-        position: "fixed",
-        top: 86,
-        left: "50%",
-        transform: "translateX(-50%)",
+        position: embedded ? "relative" : "fixed",
+        top: embedded ? "auto" : 86,
+        left: embedded ? "auto" : "50%",
+        transform: embedded ? "none" : "translateX(-50%)",
         zIndex: 10000,
-        width: "min(420px, 86vw)",
+        width: compact ? "min(280px, 62vw)" : "min(420px, 86vw)",
         backgroundColor: "rgba(17, 24, 39, 0.94)",
         border: `1.5px solid ${isSelecting ? "rgba(167,139,250,0.55)" : "rgba(255, 255, 255, 0.15)"}`,
         borderRadius: "14px",
-        padding: "12px 14px",
+        padding: compact ? "9px 11px" : "12px 14px",
         boxShadow: isSelecting ? "0 6px 22px rgba(167,139,250,0.25)" : "0 6px 20px rgba(0, 0, 0, 0.7)",
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-        <span style={{ fontFamily: "monospace", fontSize: 18, fontWeight: 700, color: dirColor, letterSpacing: "0.06em" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: compact ? 6 : 8 }}>
+        <span style={{ fontFamily: "monospace", fontSize: compact ? 15 : 18, fontWeight: 700, color: dirColor, letterSpacing: "0.06em" }}>
           {dir}
         </span>
-        <span style={{ fontFamily: "monospace", fontSize: 12, color: "rgba(255,255,255,0.65)" }}>
+        <span style={{ fontFamily: "monospace", fontSize: compact ? 11 : 12, color: "rgba(255,255,255,0.65)" }}>
           conf {conf.toFixed(2)}
         </span>
       </div>
 
-      <div style={{ height: 8, borderRadius: 999, background: "rgba(255,255,255,0.08)", overflow: "hidden" }}>
+      <div style={{ height: compact ? 7 : 8, borderRadius: 999, background: "rgba(255,255,255,0.08)", overflow: "hidden" }}>
         <div
           style={{
             width: `${Math.round(progress * 100)}%`,
@@ -149,7 +117,7 @@ function CnnIndicator({ cnnDebug }) {
         />
       </div>
 
-      <div style={{ marginTop: 7, display: "flex", justifyContent: "space-between", fontSize: 11, color: "rgba(255,255,255,0.55)" }}>
+      <div style={{ marginTop: compact ? 5 : 7, display: "flex", justifyContent: "space-between", fontSize: compact ? 10 : 11, color: "rgba(255,255,255,0.55)" }}>
         <span>Select: {selectionMethod}</span>
         <span>{statusText}</span>
       </div>

@@ -41,6 +41,8 @@ export default function Settings() {
     sensorSettings, updateSensorSettings,
     eyeReady, eyeCentered,
     recenterEyes, setYBias, setCenterBuffer, setCommandDelay,
+    eyeHoldRepeatEnabled, setEyeHoldRepeatEnabled,
+    eyeHoldRepeatDelay, setEyeHoldRepeatDelay,
     cnnReady, gazeLabel,
     centerSelectMinConfidence, setCenterSelectMinConfidence,
     centerSelectNoiseDelta, setCenterSelectNoiseDelta,
@@ -352,6 +354,35 @@ export default function Settings() {
 
               <Divider />
 
+              <div style={s.toggleRow}>
+                <span style={s.selectLabelRow}>
+                  <span style={s.selectLabel}>Hold-to-repeat navigation</span>
+                  <HelpIcon text="When enabled, keeping gaze on a navigation direction repeats jumps with fixed delay." />
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setEyeHoldRepeatEnabled(!eyeHoldRepeatEnabled)}
+                  style={{
+                    ...s.toggleBtn,
+                    ...(eyeHoldRepeatEnabled ? s.toggleBtnOn : s.toggleBtnOff),
+                  }}
+                >
+                  {eyeHoldRepeatEnabled ? "ON" : "OFF"}
+                </button>
+              </div>
+
+              {eyeHoldRepeatEnabled && (
+                <>
+                  <SliderRow label="Repeat delay" hint="Delay between repeated jumps while holding gaze"
+                    value={eyeHoldRepeatDelay} display={`${Math.round(eyeHoldRepeatDelay)} ms`}
+                    help="Lower values move faster on long holds."
+                    min={60} max={1200} step={20} accent="#22c55e"
+                    onChange={setEyeHoldRepeatDelay} />
+                </>
+              )}
+
+              <Divider />
+
               <button style={s.recenterBtn}
                 onMouseEnter={e => e.currentTarget.style.background = "rgba(34,197,94,0.12)"}
                 onMouseLeave={e => e.currentTarget.style.background = "transparent"}
@@ -523,6 +554,33 @@ export default function Settings() {
                 min={100} max={1200} step={50} accent="#22c55e"
                 onChange={v => { setLocalCommandDelay(v); setCommandDelay(v); }} />
 
+              <Divider />
+
+              <div style={s.toggleRow}>
+                <span style={s.selectLabelRow}>
+                  <span style={s.selectLabel}>Fast hold navigation</span>
+                  <HelpIcon text="When enabled, keeping CNN gaze on a navigation direction repeats jumps with fixed delay." />
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setEyeHoldRepeatEnabled(!eyeHoldRepeatEnabled)}
+                  style={{
+                    ...s.toggleBtn,
+                    ...(eyeHoldRepeatEnabled ? s.toggleBtnOn : s.toggleBtnOff),
+                  }}
+                >
+                  {eyeHoldRepeatEnabled ? "ON" : "OFF"}
+                </button>
+              </div>
+
+              {eyeHoldRepeatEnabled && (
+                <SliderRow label="Fast repeat delay" hint="Delay between repeated CNN jumps while holding gaze"
+                  value={eyeHoldRepeatDelay} display={`${Math.round(eyeHoldRepeatDelay)} ms`}
+                  help="Lower values move faster on long holds in Keyboard and other pages."
+                  min={60} max={1200} step={20} accent="#22c55e"
+                  onChange={setEyeHoldRepeatDelay} />
+              )}
+
               <p style={{ fontSize: 12, color: "rgba(255,255,255,0.22)", margin: "8px 0 0 0" }}>
                 CNN smoothing comes mainly from backend stabilization; use command delay and selection dwell for feel.
               </p>
@@ -684,6 +742,32 @@ const s = {
     letterSpacing: "0.08em", transition: "all 0.2s",
   },
   selectRow: { display: "flex", flexDirection: "column", gap: "10px" },
+  toggleRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  toggleBtn: {
+    minWidth: 72,
+    height: 34,
+    borderRadius: 999,
+    border: "1px solid",
+    fontSize: 12,
+    fontWeight: 700,
+    letterSpacing: "0.08em",
+    cursor: "pointer",
+  },
+  toggleBtnOn: {
+    borderColor: "rgba(34,197,94,0.6)",
+    color: "#86efac",
+    background: "rgba(34,197,94,0.12)",
+  },
+  toggleBtnOff: {
+    borderColor: "rgba(255,255,255,0.2)",
+    color: "rgba(255,255,255,0.55)",
+    background: "rgba(255,255,255,0.04)",
+  },
   selectLabelRow: { display: "flex", alignItems: "center", gap: 8 },
   selectLabel: { fontSize: "13px", fontWeight: "500", color: "rgba(255,255,255,0.65)" },
   helpIcon: {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { apiGet, apiPost, createSuggestSocket } from "../api";
 import { useInputControl } from "./InputControlContext";
@@ -55,31 +55,91 @@ export default function Communicate() {
   const drumItemsRef = useRef(drumItems);
   useEffect(() => { drumItemsRef.current = drumItems; }, [drumItems]);
 
-  // ── personalized starters ────────────────────────────────────────────────
-  useEffect(() => {
+  const loadStarters = useCallback(() => {
     apiGet("/vocab/starters?limit=12")
       .then(d => {
-        const list = d.starters.map(s => s.word).filter(Boolean);
-        if (list.length >= 4) setStarters(list);
+        const learned = d.starters.map(s => s.word).filter(Boolean);
+        const merged = [];
+        const seen = new Set();
+
+        for (const w of learned) {
+          const key = String(w).trim().toLowerCase();
+          if (!key || seen.has(key)) continue;
+          seen.add(key);
+          merged.push(w);
+        }
+
+        for (const w of DEFAULT_STARTERS) {
+          const key = String(w).trim().toLowerCase();
+          if (!key || seen.has(key)) continue;
+          seen.add(key);
+          merged.push(w);
+          if (merged.length >= 12) break;
+        }
+
+        if (merged.length > 0) setStarters(merged.slice(0, 12));
       })
       .catch(() => {});
   }, []);
 
+  // ── personalized starters ────────────────────────────────────────────────
+  useEffect(() => {
+    loadStarters();
+  }, [loadStarters]);
+
+  // Refresh starters whenever sentence is cleared back to empty.
+  useEffect(() => {
+    if (words.length === 0) loadStarters();
+  }, [words.length, loadStarters]);
+
   // ── suggestion WebSocket ─────────────────────────────────────────────────
   useEffect(() => {
-    const ws = createSuggestSocket();
-    wsRef.current = ws;
-    ws.onopen = () => {
-      // Don't send anything on initial connect - wait for words to be set
-    };
-    ws.onmessage = e => {
-      const d = JSON.parse(e.data);
-      if (d.suggestions) {
-        setSuggestions(d.suggestions.map(s => s.word ?? s));
-        setSel(0);
+    let ws = null;
+    let reconnectTimer = null;
+    let closedByCleanup = false;
+
+    const sendCurrentWords = () => {
+      const currentWords = wordsRef.current || [];
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      if (currentWords.length === 0) {
+        setSuggestions([]);
+        return;
       }
+      ws.send(JSON.stringify({ text: currentWords.join(" "), words: currentWords, top_k: 8 }));
     };
-    return () => ws.close();
+
+    const connect = () => {
+      ws = createSuggestSocket();
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        sendCurrentWords();
+      };
+
+      ws.onmessage = e => {
+        const d = JSON.parse(e.data);
+        if (d.suggestions) {
+          setSuggestions(d.suggestions.map(s => s.word ?? s));
+          setSel(0);
+        }
+      };
+
+      ws.onerror = () => {};
+
+      ws.onclose = () => {
+        if (closedByCleanup) return;
+        reconnectTimer = setTimeout(connect, 1200);
+      };
+    };
+
+    connect();
+
+    return () => {
+      closedByCleanup = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (ws) ws.close();
+      wsRef.current = null;
+    };
   }, []);
 
   useEffect(() => {
@@ -247,6 +307,7 @@ export default function Communicate() {
               : mode === "head" ? "🎮 HEAD: Use LEFT/RIGHT/UP/DOWN to browse · FORWARD to select · BACK to exit"
               : mode === "eyes" ? "👁️ EYES: Use LEFT/RIGHT/UP/DOWN to browse · FORWARD to select"
               : mode === "cnn" ? "🧠 CNN: Use LEFT/RIGHT/UP/DOWN to browse · FORWARD to select"
+              : mode === "custom" ? "🧭 CUSTOM: Commands follow your action-source bindings"
               : "Select a starter…"}
           </p>
           <div style={s.starterGrid}>

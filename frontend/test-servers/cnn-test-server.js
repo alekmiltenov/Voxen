@@ -4,7 +4,7 @@
  * Simulates nn_server.py for testing the frontend without actual hardware
  * 
  * Usage: node cnn-test-server.js
- * Then open http://localhost:8000 in browser to control the fake CNN predictions
+ * Then open http://localhost:8001 in browser to control the fake CNN predictions
  * 
  * The frontend will connect to ws://localhost:8000/ws/predict and receive simulated data
  */
