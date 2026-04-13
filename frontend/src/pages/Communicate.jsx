@@ -301,6 +301,27 @@ export default function Communicate() {
     const gridItems = 12;
     return (
       <div style={s.page}>
+        <div style={s.starterTop}>
+          <button
+            style={{
+              ...s.starterBackBtn,
+              borderColor: enabled && selIdx === gridItems + 1 ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.1)",
+              background: enabled && selIdx === gridItems + 1 ? "rgba(255,255,255,0.08)" : "transparent",
+              color: enabled && selIdx === gridItems + 1 ? "rgba(255,255,255,1)" : "rgba(255,255,255,0.35)",
+            }}
+            onMouseEnter={e => {
+              if (!(enabled && selIdx === gridItems + 1)) e.currentTarget.style.background = "rgba(255,255,255,0.08)";
+            }}
+            onMouseLeave={e => {
+              if (!(enabled && selIdx === gridItems + 1)) e.currentTarget.style.background = "transparent";
+            }}
+            onClick={() => navigate("/")}
+          >
+            ← Back
+          </button>
+          <span style={s.starterTitle}>Communicate</span>
+        </div>
+
         <div style={s.starterBody}>
           <p style={s.starterHint}>
             {!enabled ? "Start with…"
@@ -344,20 +365,7 @@ export default function Communicate() {
               onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.03)")}
               onClick={() => navigate("/keyboard", { state: { words } })}
             >
-              ⌨️ Keyboard
-            </button>
-            <button
-              style={{
-                ...s.keyboardBtn,
-                borderColor: enabled && selIdx === gridItems + 1 ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.08)",
-                background:  enabled && selIdx === gridItems + 1 ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.03)",
-                color:       enabled && selIdx === gridItems + 1 ? "rgba(255,255,255,1)" : "rgba(255,255,255,0.85)",
-              }}
-              onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")}
-              onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.03)")}
-              onClick={() => navigate("/")}
-            >
-              ← Back to Home
+              Keyboard
             </button>
           </div>
         </div>
@@ -482,15 +490,45 @@ const s = {
     background: "#111111", display: "flex", alignItems: "center", overflow: "hidden",
   },
   starterTop: {
-    position: "absolute", top: "28px", left: 0, right: 0,
-    display: "flex", justifyContent: "space-between", padding: "0 32px",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    position: "absolute",
+    top: "28px",
+    left: "32px",
+    right: "32px",
+    minHeight: "34px",
+  },
+  starterBackBtn: {
+    position: "absolute",
+    top: "50%",
+    left: 0,
+    transform: "translateY(-50%)",
+    padding: "8px 18px",
+    borderRadius: "20px",
+    background: "transparent",
+    border: "1px solid rgba(255,255,255,0.1)",
+    color: "rgba(255,255,255,0.35)",
+    fontSize: "13px",
+    cursor: "pointer",
+    zIndex: 2,
+  },
+  starterTitle: {
+    fontSize: "18px",
+    fontWeight: "300",
+    color: "rgba(255,255,255,0.5)",
+    letterSpacing: "0.1em",
+    textTransform: "uppercase",
   },
   starterBody: {
     width: "100%", display: "flex", flexDirection: "column",
     alignItems: "center", gap: "32px", paddingTop: "80px",
   },
   starterButtonRow: {
-    display: "flex", gap: "20px", justifyContent: "center", marginTop: "24px",
+    display: "flex",
+    justifyContent: "flex-start",
+    width: "min(900px, 90vw)",
+    marginTop: "3px",
   },
   starterHint: {
     margin: 0, fontSize: "14px", color: "rgba(255,255,255,0.25)",
@@ -506,6 +544,9 @@ const s = {
     cursor: "pointer", transition: "all 0.15s ease", letterSpacing: "-0.2px",
   },
   keyboardBtn: {
+    marginLeft: "calc(((100% - 42px) / 4) * 0.75)",
+    width: "calc((((100% - 42px) / 4) * 2.5) + 42px)",
+    maxWidth: "100%",
     padding: "28px 40px", borderRadius: "14px", border: "1px solid",
     color: "rgba(255,255,255,0.85)", fontSize: "18px", fontWeight: "400",
     cursor: "pointer", transition: "all 0.15s ease", letterSpacing: "-0.2px",
