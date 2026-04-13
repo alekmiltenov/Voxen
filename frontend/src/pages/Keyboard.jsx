@@ -440,7 +440,10 @@ export default function Keyboard() {
   }, []);
 
   return (
-    <div style={s.page}>
+    <>
+      <style>{"@keyframes keyboardCursorBlink { 50% { opacity: 0; } }"}</style>
+
+      <div style={s.page}>
       <div style={s.topBar}>
         <button style={s.pill}
           onClick={() => void persistAndReturn()}>
@@ -491,6 +494,7 @@ export default function Keyboard() {
       <div style={s.display}>
         <span style={text ? s.displayText : s.placeholder}>
           {text || "Start typing…"}
+          <span style={s.cursor} aria-hidden="true" />
         </span>
       </div>
 
@@ -624,7 +628,8 @@ export default function Keyboard() {
           )}
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -744,6 +749,15 @@ const s = {
   },
   displayText: { fontSize: "26px", fontWeight: "300", color: "#ffffff" },
   placeholder: { fontSize: "20px", color: "rgba(255,255,255,0.2)" },
+  cursor: {
+    display: "inline-block",
+    width: "2px",
+    height: "1em",
+    marginLeft: "3px",
+    background: "rgba(255,255,255,0.55)",
+    verticalAlign: "middle",
+    animation: "keyboardCursorBlink 1.1s step-end infinite",
+  },
   scanGestureHint: {
     margin: 0,
     textAlign: "center",
