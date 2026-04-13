@@ -155,9 +155,9 @@ export default function Pain() {
                     ...part.shape,
                     fontSize: part.id === "neck" ? "clamp(11px, 1.1vw, 15px)" : s.hotspot.fontSize,
                     border: "none",
-                    background: isSelected ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.08)",
-                    color: isSelected ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.45)",
-                    boxShadow: isSelected ? "0 0 0 1px rgba(255,255,255,0.2) inset" : "none",
+                    background: isSelected ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.08)",
+                    color: "rgba(255,255,255,0.45)",
+                    boxShadow: "none",
                   }}
                   onMouseEnter={(e) => {
                     if (!isSelected) {
@@ -175,7 +175,7 @@ export default function Pain() {
                   }}
                   onClick={() => fireSelection(ITEMS[idx])}
                 >
-                  <span style={{ opacity: 0, transition: 'opacity 0.2s' }}>
+                  <span style={{ opacity: isSelected ? 1 : 0, transition: 'opacity 0.2s' }}>
                     {part.label}
                   </span>
                 </button>
