@@ -90,7 +90,7 @@ export default function Pain() {
         if (cmd === "LEFT") setSel((current - 1 + total) % total);
         if (cmd === "RIGHT") setSel((current + 1) % total);
         if (cmd === "FORWARD") fireSelection(ITEMS[current]);
-        if (cmd === "BACK") navigate("/");
+        if (cmd === "BACK") navigate(-1);
         return;
       }
 
@@ -111,7 +111,7 @@ export default function Pain() {
       }
 
       if (cmd === "FORWARD") fireSelection(ITEMS[current]);
-      if (cmd === "BACK") navigate("/");
+      if (cmd === "BACK") navigate(-1);
     });
 
     return () => unregister();
@@ -232,7 +232,7 @@ export default function Pain() {
             onMouseLeave={(e) => {
               e.currentTarget.style.background = "rgba(255,255,255,0.04)";
             }}
-            onClick={() => navigate("/")}
+            onClick={() => navigate(-1)}
           >
             ← Back
           </button>

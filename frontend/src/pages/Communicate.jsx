@@ -123,7 +123,7 @@ export default function Communicate() {
 
       <div style={s.starterBody}>
         <p style={s.starterHint}>
-          {!enabled ? "Start with…"
+          {!enabled ? "Start with:"
             : mode === "head" ? "HEAD: Use LEFT/RIGHT/UP/DOWN to browse · FORWARD to select · BACK to exit"
             : mode === "eyes" ? "EYES: Use LEFT/RIGHT/UP/DOWN to browse · FORWARD to select"
             : mode === "cnn" ? "CNN: Use LEFT/RIGHT/UP/DOWN to browse · FORWARD to select"
@@ -240,7 +240,9 @@ const s = {
   },
   starterHint: {
     margin: 0, fontSize: "clamp(12px, 1.5vw, 14px)", color: "rgba(255,255,255,0.25)",
-    letterSpacing: "0.08em", textTransform: "uppercase", textAlign: "center",
+    letterSpacing: "0.08em", textTransform: "uppercase", textAlign: "left",
+    width: "min(900px, 90vw)",
+    boxSizing: "border-box",
   },
   starterGrid: {
     display: "grid", gridTemplateColumns: "repeat(4, 1fr)",
