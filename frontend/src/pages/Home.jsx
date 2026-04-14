@@ -162,6 +162,7 @@ export default function Home() {
               <span style={s.cardTitle}>{card.title}</span>
               <span style={s.cardSub}>{card.sub}</span>
 
+              {/*
               {enabled && (
                 <span style={s.hint}>
                   {mode === "head" || mode === "cnn"
@@ -171,12 +172,13 @@ export default function Home() {
                       : (i === 0 ? "↑ HOLD UP" : "↓ HOLD DOWN")}
                 </span>
               )}
+              */}
             </button>
           );
         })}
       </div>
 
-      {enabled && (
+      {/* {enabled && (
         <p style={s.legend}>
           {mode === "head" || mode === "cnn"
             ? "LEFT / RIGHT · select     FORWARD · confirm"
@@ -184,7 +186,7 @@ export default function Home() {
               ? "← LEFT · Communicate     → RIGHT · Actions     HOLD to confirm"
               : "↑ UP · Communicate     ↓ DOWN · Actions     HOLD to confirm"}
         </p>
-      )}
+      )} */}
     </div>
   );
 }
@@ -224,7 +226,7 @@ const s = {
   },
   card: {
     position: "relative", display: "flex", flexDirection: "column", alignItems: "center",
-    justifyContent: "center", gap: "18px", padding: "56px 40px 44px", borderRadius: "20px",
+    justifyContent: "center", gap: "18px", padding: "80px 40px 68px", borderRadius: "20px",
     border: "1px solid", cursor: "pointer", transition: "all 0.18s ease", overflow: "hidden",
     background: "transparent", outline: "none", color: "rgba(255,255,255,0.7)",
   },

@@ -12,7 +12,7 @@ export default function EyeTrackingDebug() {
   const { mode, eyeDebug, cnnDebug, headDebug } = useInputControl();
   const location = useLocation();
   const isSettingsPage = location.pathname === "/settings";
-  const showModeIndicator = ["/", "/communicate"].includes(location.pathname);
+  const showModeIndicator = ["/", "/communicate", "/compose"].includes(location.pathname);
 
   if (mode === "eyes" && eyeDebug) {
     if (!isSettingsPage) {

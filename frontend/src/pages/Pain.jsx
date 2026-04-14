@@ -90,7 +90,7 @@ export default function Pain() {
         if (cmd === "LEFT") setSel((current - 1 + total) % total);
         if (cmd === "RIGHT") setSel((current + 1) % total);
         if (cmd === "FORWARD") fireSelection(ITEMS[current]);
-        if (cmd === "BACK") navigate("/");
+        if (cmd === "BACK") navigate(-1);
         return;
       }
 
@@ -111,7 +111,7 @@ export default function Pain() {
       }
 
       if (cmd === "FORWARD") fireSelection(ITEMS[current]);
-      if (cmd === "BACK") navigate("/");
+      if (cmd === "BACK") navigate(-1);
     });
 
     return () => unregister();
@@ -122,7 +122,6 @@ export default function Pain() {
   return (
     <div style={s.page}>
       <div style={s.header}>
-        <button style={s.backBtn} onClick={() => navigate("/")}>← Back</button>
         <span style={s.title}>Pain & comfort</span>
         {status && (
           <div
@@ -220,6 +219,23 @@ export default function Pain() {
               </button>
             );
           })}
+          <button
+            style={{
+              ...s.quickBtn,
+              borderColor: "rgba(255,255,255,0.12)",
+              background: "rgba(255,255,255,0.04)",
+              color: "rgba(255,255,255,0.8)",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "rgba(255,255,255,0.1)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "rgba(255,255,255,0.04)";
+            }}
+            onClick={() => navigate(-1)}
+          >
+            ← Back
+          </button>
         </div>
       </div>
 
@@ -328,13 +344,14 @@ const s = {
     transition: "border-color 0.15s, background 0.15s, color 0.15s",
   },
   quickCol: {
-    width: "min(36vw, 260px)",
+    width: "min(37vw, 267px)",
+    marginleft: "1.5vw",
     display: "flex",
     flexDirection: "column",
     gap: "14px",
   },
   quickBtn: {
-    minHeight: "88px",
+    minHeight: "70px",
     borderRadius: "14px",
     border: "1px solid",
     fontSize: "22px",

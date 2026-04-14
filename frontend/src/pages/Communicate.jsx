@@ -31,7 +31,10 @@ export default function Communicate() {
   const loadStarters = useCallback(() => {
     apiGet("/vocab/starters?limit=12")
       .then((d) => {
-        const learned = d.starters.map((s) => s.word).filter(Boolean);
+        const learned = d.starters.map((s) => {
+          const word = String(s.word).trim();
+          return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+        }).filter(Boolean);
         const merged = [];
         const seen = new Set();
 
@@ -80,7 +83,7 @@ export default function Communicate() {
         if (cmd === "DOWN") newSel = Math.min(totalItems - 1, selRef.current + gridSize);
         if (cmd === "FORWARD") {
           if (selRef.current < gridItems) selectStarter(startersRef.current[selRef.current]);
-          else if (selRef.current === gridItems) navigate("/keyboard", { state: { words: [] } });
+          else if (selRef.current === gridItems) navigate("/keyboard", { state: { words: [], returnTo: "/compose" } });
           else if (selRef.current === gridItems + 1) navigate("/");
         }
         if (cmd === "BACK") navigate("/");
@@ -91,7 +94,7 @@ export default function Communicate() {
         if (cmd === "RIGHT") newSel = wrap(selRef.current + 1, totalItems);
         if (cmd === "FORWARD") {
           if (selRef.current < gridItems) selectStarter(startersRef.current[selRef.current]);
-          else if (selRef.current === gridItems) navigate("/keyboard", { state: { words: [] } });
+          else if (selRef.current === gridItems) navigate("/keyboard", { state: { words: [], returnTo: "/compose" } });
           else if (selRef.current === gridItems + 1) navigate("/");
         }
       } else {
@@ -101,7 +104,7 @@ export default function Communicate() {
         if (cmd === "RIGHT") newSel = wrap(selRef.current + 1, totalItems);
         if (cmd === "FORWARD") {
           if (selRef.current < gridItems) selectStarter(startersRef.current[selRef.current]);
-          else if (selRef.current === gridItems) navigate("/keyboard", { state: { words: [] } });
+          else if (selRef.current === gridItems) navigate("/keyboard", { state: { words: [], returnTo: "/compose" } });
           else if (selRef.current === gridItems + 1) navigate("/");
         }
       }
@@ -118,35 +121,18 @@ export default function Communicate() {
   return (
     <div style={s.page}>
       <div style={s.starterTop}>
-        <button
-          style={{
-            ...s.starterBackBtn,
-            borderColor: enabled && selIdx === gridItems + 1 ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.1)",
-            background: enabled && selIdx === gridItems + 1 ? "rgba(255,255,255,0.08)" : "transparent",
-            color: enabled && selIdx === gridItems + 1 ? "rgba(255,255,255,1)" : "rgba(255,255,255,0.35)",
-          }}
-          onMouseEnter={(e) => {
-            if (!(enabled && selIdx === gridItems + 1)) e.currentTarget.style.background = "rgba(255,255,255,0.08)";
-          }}
-          onMouseLeave={(e) => {
-            if (!(enabled && selIdx === gridItems + 1)) e.currentTarget.style.background = "transparent";
-          }}
-          onClick={() => navigate("/")}
-        >
-          ← Back
-        </button>
         <span style={s.starterTitle}>Communicate</span>
       </div>
 
       <div style={s.starterBody}>
-        <p style={s.starterHint}>
-          {!enabled ? "Start with…"
+        {/* <p style={s.starterHint}>
+          {!enabled ? "Start with:"
             : mode === "head" ? "HEAD: Use LEFT/RIGHT/UP/DOWN to browse · FORWARD to select · BACK to exit"
             : mode === "eyes" ? "EYES: Use LEFT/RIGHT/UP/DOWN to browse · FORWARD to select"
             : mode === "cnn" ? "CNN: Use LEFT/RIGHT/UP/DOWN to browse · FORWARD to select"
             : mode === "custom" ? "CUSTOM: Commands follow your action-source bindings"
             : "Select a starter…"}
-        </p>
+        </p> */}
 
         <div style={s.starterGrid}>
           {starters.map((phrase, i) => {
@@ -181,13 +167,26 @@ export default function Communicate() {
             }}
             onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")}
             onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.03)")}
-            onClick={() => navigate("/keyboard", { state: { words: [] } })}
+            onClick={() => navigate("/keyboard", { state: { words: [], returnTo: "/compose" } })}
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="18" height="18" aria-hidden="true">
               <rect x="2" y="6" width="20" height="12" rx="2" />
               <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8" />
             </svg>
             <span>Keyboard</span>
+          </button>
+          <button
+            style={{
+              ...s.backBtn,
+              borderColor: enabled && selIdx === gridItems + 1 ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.08)",
+              background: enabled && selIdx === gridItems + 1 ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.03)",
+              color: enabled && selIdx === gridItems + 1 ? "rgba(255,255,255,1)" : "rgba(255,255,255,0.85)",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.03)")}
+            onClick={() => navigate("/")}
+          >
+            ← Back
           </button>
         </div>
       </div>
@@ -205,10 +204,11 @@ const s = {
     justifyContent: "center",
     alignItems: "center",
     position: "absolute",
-    top: "28px",
-    left: "32px",
-    right: "32px",
-    minHeight: "34px",
+    top: "3%",
+    left: 0,
+    right: 0,
+    minHeight: "5%",
+    marginTop: "12px",
   },
   starterBackBtn: {
     position: "absolute",
@@ -225,7 +225,7 @@ const s = {
     zIndex: 2,
   },
   starterTitle: {
-    fontSize: "18px",
+    fontSize: "clamp(14px, 2.5vw, 18px)",
     fontWeight: "300",
     color: "rgba(255,255,255,0.5)",
     letterSpacing: "0.1em",
@@ -233,33 +233,43 @@ const s = {
   },
   starterBody: {
     width: "100%", display: "flex", flexDirection: "column",
-    alignItems: "center", gap: "32px", paddingTop: "80px",
+    alignItems: "center", gap: "clamp(20px, 3vw, 32px)", paddingTop: "clamp(50px, 8vh, 100px)",
   },
   starterButtonRow: {
     display: "flex",
     justifyContent: "flex-start",
     width: "min(900px, 90vw)",
-    marginTop: "3px",
+    gap: "clamp(8px, 1.5vw, 14px)",
+    marginTop: "clamp(2px, 0.5vh, 10px)",
   },
   starterHint: {
-    margin: 0, fontSize: "14px", color: "rgba(255,255,255,0.25)",
-    letterSpacing: "0.08em", textTransform: "uppercase", textAlign: "center",
+    margin: 0, fontSize: "clamp(12px, 1.5vw, 14px)", color: "rgba(255,255,255,0.25)",
+    letterSpacing: "0.08em", textTransform: "uppercase", textAlign: "left",
+    width: "min(900px, 90vw)",
+    boxSizing: "border-box",
   },
   starterGrid: {
     display: "grid", gridTemplateColumns: "repeat(4, 1fr)",
-    gap: "14px", width: "min(900px, 90vw)",
+    gap: "clamp(10px, 1.5vw, 14px)", width: "min(900px, 90vw)",
   },
   starterBtn: {
-    padding: "22px 16px", borderRadius: "14px", border: "1px solid",
-    color: "rgba(255,255,255,0.85)", fontSize: "20px", fontWeight: "300",
+    padding: "clamp(16px, 2vh, 22px) clamp(12px, 2vw, 16px)", borderRadius: "14px", border: "1px solid",
+    color: "rgba(255,255,255,0.85)", fontSize: "clamp(16px, 2vw, 20px)", fontWeight: "300",
     cursor: "pointer", transition: "all 0.15s ease", letterSpacing: "-0.2px",
   },
   keyboardBtn: {
-    marginLeft: "calc(((100% - 42px) / 4) * 0.75)",
-    width: "calc((((100% - 42px) / 4) * 2.5) + 42px)",
-    maxWidth: "100%",
-    padding: "28px 40px", borderRadius: "14px", border: "1px solid",
-    color: "rgba(255,255,255,0.85)", fontSize: "18px", fontWeight: "400",
+    marginLeft: "12.5%",
+    flex: "1 1 0",
+    padding: "clamp(18px, 2.2vh, 22px) clamp(20px, 2vw, 40px)", borderRadius: "14px", border: "1px solid",
+    color: "rgba(255,255,255,0.85)", fontSize: "clamp(16px, 1.8vw, 18px)", fontWeight: "400",
+    display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "10px",
+    cursor: "pointer", transition: "all 0.15s ease", letterSpacing: "-0.2px",
+  },
+  backBtn: {
+    marginRight: "12.5%",
+    flex: "0 0 25%",
+    padding: "clamp(16px, 2vh, 22px) clamp(12px, 2vw, 16px)", borderRadius: "14px", borderWidth: "1px", borderStyle: "solid",
+    color: "rgba(255,255,255,0.85)", fontSize: "clamp(16px, 1.8vw, 18px)", fontWeight: "400",
     display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "10px",
     cursor: "pointer", transition: "all 0.15s ease", letterSpacing: "-0.2px",
   },

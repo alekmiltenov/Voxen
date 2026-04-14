@@ -186,14 +186,12 @@ export default function Compose() {
     if (!wordsToAdd.length) return;
 
     setAppendedWords((prev) => [...prev, ...wordsToAdd]);
-    setTimedFeedback("listening", `Added: "${phrase}"`, 2000);
-  }, [setTimedFeedback]);
+  }, []);
 
   const deleteBackspace = useCallback(() => {
     setAppendedWords((prev) => {
       if (!prev.length) return prev;
-      const nextText = prev.join(" ").slice(0, -1).trimEnd();
-      return splitWords(nextText);
+      return prev.slice(0, -1);
     });
   }, []);
 
@@ -212,10 +210,11 @@ export default function Compose() {
     navigate("/keyboard", {
       state: {
         words: fullWords,
+        starterLength: starterWords.length,
         returnTo: `/compose?start=${encodeURIComponent(starterPhrase)}`,
       },
     });
-  }, [fullWords, navigate, starterPhrase]);
+  }, [fullWords, navigate, starterPhrase, starterWords.length]);
 
   const suggestions = useMemo(() => {
     return modelSuggestions
@@ -237,12 +236,13 @@ export default function Compose() {
       }
     });
 
+    items.push({ id: "action-delete", run: deleteBackspace });
     items.push({ id: "action-speak", run: speakText });
     items.push({ id: "action-keyboard", run: openKeyboard });
-    items.push({ id: "action-delete", run: deleteBackspace });
+    items.push({ id: "action-back", run: () => navigate("/communicate") });
 
     return items;
-  }, [addPhrase, deleteBackspace, openKeyboard, speakText, suggestions]);
+  }, [addPhrase, deleteBackspace, openKeyboard, speakText, suggestions, navigate]);
 
   const indexById = useMemo(() => {
     const map = {};
@@ -251,6 +251,28 @@ export default function Compose() {
     });
     return map;
   }, [interactiveItems]);
+
+  const navRows = useMemo(() => {
+    const rows = [];
+    const suggestionIds = suggestions.map((_, idx) => `sugg-${idx}`);
+
+    for (let i = 0; i < suggestionIds.length; i += 4) {
+      rows.push(suggestionIds.slice(i, i + 4));
+    }
+
+    rows.push(["action-delete", "action-speak", "action-keyboard", "action-back"]);
+    return rows;
+  }, [suggestions]);
+
+  const positionById = useMemo(() => {
+    const map = {};
+    navRows.forEach((row, rowIdx) => {
+      row.forEach((id, colIdx) => {
+        map[id] = { row: rowIdx, col: colIdx };
+      });
+    });
+    return map;
+  }, [navRows]);
 
   const setSel = useCallback((next) => {
     selRef.current = next;
@@ -270,6 +292,8 @@ export default function Compose() {
       if (!total) return;
 
       const current = selRef.current;
+      const currentId = interactiveItems[current]?.id;
+      const currentPos = currentId ? positionById[currentId] : null;
 
       if (cmd === "BACK") {
         navigate("/communicate");
@@ -281,17 +305,50 @@ export default function Compose() {
         return;
       }
 
-      if (cmd === "UP" || cmd === "LEFT") {
-        setSel((current - 1 + total) % total);
+      if (!currentPos) return;
+
+      const moveTo = (rowIdx, colIdx) => {
+        const rowItems = navRows[rowIdx];
+        if (!rowItems?.length) return;
+
+        const targetCol = Math.max(0, Math.min(colIdx, rowItems.length - 1));
+        const targetId = rowItems[targetCol];
+        const targetIdx = indexById[targetId];
+        if (Number.isInteger(targetIdx)) {
+          setSel(targetIdx);
+        }
+      };
+
+      if (cmd === "LEFT") {
+        const rowItems = navRows[currentPos.row];
+        if (!rowItems?.length) return;
+        const nextCol = (currentPos.col - 1 + rowItems.length) % rowItems.length;
+        moveTo(currentPos.row, nextCol);
+        return;
       }
 
-      if (cmd === "DOWN" || cmd === "RIGHT") {
-        setSel((current + 1) % total);
+      if (cmd === "RIGHT") {
+        const rowItems = navRows[currentPos.row];
+        if (!rowItems?.length) return;
+        const nextCol = (currentPos.col + 1) % rowItems.length;
+        moveTo(currentPos.row, nextCol);
+        return;
+      }
+
+      if (cmd === "UP") {
+        const nextRow = Math.max(0, currentPos.row - 1);
+        moveTo(nextRow, currentPos.col);
+        return;
+      }
+
+      if (cmd === "DOWN") {
+        const nextRow = Math.min(navRows.length - 1, currentPos.row + 1);
+        moveTo(nextRow, currentPos.col);
       }
     });
 
     return () => unregister();
-  }, [interactiveItems, navigate, register, setSel, unregister]);
+  }, [indexById, interactiveItems, navRows, navigate, positionById, register, setSel, unregister]);
 
   if (!starterWords.length) return null;
 
@@ -307,15 +364,16 @@ export default function Compose() {
 
       <div style={s.page}>
         <div style={s.topBar}>
-          <button style={s.backBtn} onClick={() => navigate("/communicate")}>← Back</button>
           <span style={s.title}>COMPOSE</span>
         </div>
 
         <div style={s.display}>
-          <span style={s.displayText}>
-            {fullText}
-            <span style={s.cursor} />
-          </span>
+          <input
+            type="text"
+            value={fullText}
+            readOnly
+            style={s.displayText}
+          />
         </div>
 
         <div style={s.sectionLabel}>SUGGESTIONS:</div>
@@ -358,6 +416,22 @@ export default function Compose() {
           <button
             style={{
               ...s.speakBtn,
+              ...((enabled && indexById["action-delete"] === selIdx) || hoveredId === "action-delete" ? s.actionBtnActive : {}),
+            }}
+            onMouseEnter={() => setHoveredId("action-delete")}
+            onMouseLeave={() => setHoveredId(null)}
+            onClick={() => {
+              setSel(indexById["action-delete"]);
+              deleteBackspace();
+            }}
+          >
+            <span style={{...s.deleteEmoji, fontSize: "14px"}} aria-hidden="true">⌫</span>
+            <span>Delete word</span>
+          </button>
+
+          <button
+            style={{
+              ...s.speakBtn,
               ...((enabled && indexById["action-speak"] === selIdx) || hoveredId === "action-speak" ? s.actionBtnActive : {}),
             }}
             onMouseEnter={() => setHoveredId("action-speak")}
@@ -395,17 +469,14 @@ export default function Compose() {
 
           <button
             style={{
-              ...s.iconActionBtn,
-              ...((enabled && indexById["action-delete"] === selIdx) || hoveredId === "action-delete" ? s.actionBtnActive : {}),
+              ...s.backBtn,
+              ...((enabled && indexById["action-back"] === selIdx) || hoveredId === "action-back" ? s.actionBtnActive : {}),
             }}
-            onMouseEnter={() => setHoveredId("action-delete")}
+            onMouseEnter={() => setHoveredId("action-back")}
             onMouseLeave={() => setHoveredId(null)}
-            onClick={() => {
-              setSel(indexById["action-delete"]);
-              deleteBackspace();
-            }}
+            onClick={() => navigate("/communicate")}
           >
-            <span style={s.deleteEmoji} aria-hidden="true">⌫</span>
+            ← Back
           </button>
         </div>
       </div>
@@ -420,7 +491,7 @@ const s = {
     boxSizing: "border-box",
     background: "#111111",
     borderRadius: "0px",
-    padding: "24px 28px",
+    padding: "16px",
     display: "flex",
     flexDirection: "column",
     gap: "14px",
@@ -432,20 +503,26 @@ const s = {
     justifyContent: "center",
     height: "34px",
     flexShrink: 0,
+    marginTop: "12px",
   },
   backBtn: {
-    position: "absolute",
-    left: 0,
-    padding: "8px 18px",
-    borderRadius: "20px",
+    background: "rgba(255,255,255,0.03)",
     borderWidth: "1px",
     borderStyle: "solid",
-    borderColor: "rgba(255,255,255,0.1)",
-    color: "rgba(255,255,255,0.35)",
-    fontSize: "13px",
-    background: "transparent",
-    cursor: "pointer",
+    borderColor: "rgba(255,255,255,0.08)",
+    borderRadius: "10px",
+    color: "#ffffff",
+    fontSize: "15px",
     fontWeight: 400,
+    padding: "0",
+    height: "68px",
+    cursor: "pointer",
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "10px",
+    transition: "border-color 0.12s, background 0.12s, color 0.12s",
   },
   title: {
     fontSize: "18px",
@@ -456,22 +533,28 @@ const s = {
   },
   display: {
     background: "rgba(255,255,255,0.03)",
-    borderWidth: "1px",
-    borderStyle: "solid",
-    borderColor: "rgba(255,255,255,0.08)",
-    borderRadius: "12px",
-    padding: "20px 22px",
-    minHeight: "80px",
+    marginTop: "3%",
+    minHeight: "64px",
+    padding: "14px 20px",
+    borderRadius: "14px",
+    border: "1px solid rgba(255,255,255,0.08)",
     display: "flex",
     alignItems: "center",
+    marginLeft: "30px",
+    marginRight: "30px",
   },
   displayText: {
-    fontSize: "28px",
-    color: "#e0e0e0",
-    fontWeight: 400,
-    lineHeight: 1.3,
-    wordBreak: "break-word",
-    flex: 1,
+    fontSize: "26px",
+    fontWeight: "300",
+    color: "#ffffff",
+    background: "transparent",
+    border: "none",
+    outline: "none",
+    width: "100%",
+    padding: 0,
+    margin: 0,
+    fontFamily: "inherit",
+    caretColor: "rgba(255,255,255,0.55)",
   },
   cursor: {
     display: "inline-block",
@@ -484,11 +567,12 @@ const s = {
     flexShrink: 0,
   },
   sectionLabel: {
-    fontSize: "10px",
+    fontSize: "clamp(12px, 1.5vw, 14px)",
     letterSpacing: "0.12em",
     color: "rgba(255,255,255,0.25)",
     textTransform: "uppercase",
     marginBottom: "-6px",
+    marginTop: "8px",
     fontWeight: 400,
   },
   suggestionGrid: {
@@ -497,7 +581,7 @@ const s = {
     gap: "8px",
   },
   suggestionBtn: {
-    padding: "12px 8px",
+    padding: "16px 8px",
     borderRadius: "10px",
     borderWidth: "1px",
     borderStyle: "solid",
@@ -520,21 +604,22 @@ const s = {
   },
   actionRow: {
     display: "grid",
-    gridTemplateColumns: "1fr 1fr 1fr",
+    gridTemplateColumns: "1.5fr 1.5fr 1.5fr 1fr",
     gap: "8px",
     marginTop: "auto",
-    marginBottom: "6px",
+    marginBottom: "8px",
   },
   speakBtn: {
     background: "rgba(255,255,255,0.03)",
     borderWidth: "1px",
     borderStyle: "solid",
     borderColor: "rgba(255,255,255,0.08)",
-    borderRadius: "11px",
+    borderRadius: "10px",
     color: "#ffffff",
     fontSize: "15px",
     fontWeight: 400,
-    padding: "14px 8px",
+    padding: "0",
+    height: "68px",
     cursor: "pointer",
     display: "flex",
     flexDirection: "row",
@@ -548,11 +633,12 @@ const s = {
     borderWidth: "1px",
     borderStyle: "solid",
     borderColor: "rgba(255,255,255,0.08)",
-    borderRadius: "11px",
+    borderRadius: "10px",
     color: "#ffffff",
     fontSize: "13px",
     fontWeight: 400,
-    padding: "14px 8px",
+    padding: "0",
+    height: "68px",
     cursor: "pointer",
     display: "flex",
     flexDirection: "row",

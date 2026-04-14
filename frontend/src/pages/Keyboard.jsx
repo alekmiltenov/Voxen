@@ -54,6 +54,7 @@ export default function Keyboard() {
   } = useInputControl();
 
   const incomingWords = location.state?.words ?? [];
+  const starterLength = location.state?.starterLength ?? 0;
   const returnTo      = location.state?.returnTo ?? "/communicate";
   const extraState    = location.state?.history ? { history: location.state.history } : {};
 
@@ -83,11 +84,12 @@ export default function Keyboard() {
   const scanEyesOverrideActiveRef = useRef(false);
 
   const NAV_ROWS = [
+    (mode === "eyes" || mode === "cnn") ? ["SCAN", "REPEAT"] : [],
     ROWS[0],
     ROWS[1],
     ROWS[2],
     getBottomRow(mode),
-  ];
+  ].filter(row => row.length > 0);
 
   const currentTextWords = () => text.trim().split(/\s+/).filter(Boolean);
 
@@ -200,7 +202,26 @@ export default function Keyboard() {
       }
     }
 
-    navigate(returnTo, { state: { words: allWords, ...extraState } });
+    const starterWords = incomingWords.slice(0, starterLength);
+    navigate(returnTo, { state: { words: starterWords, ...extraState } });
+  }
+
+  async function goToCompose() {
+    const allWords = currentTextWords();
+    const prev = incomingWords.map(w => String(w).trim().toLowerCase()).filter(Boolean).join(" ");
+    const next = allWords.map(w => String(w).trim().toLowerCase()).filter(Boolean).join(" ");
+    const changed = prev !== next;
+
+    if (changed && allWords.length > 0) {
+      try {
+        await apiPost("/vocab/sentence", { words: allWords });
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    const starterPhrase = allWords.length > 0 ? allWords[0] : "";
+    navigate(`/compose?start=${encodeURIComponent(starterPhrase)}`, { state: { words: allWords, ...extraState } });
   }
 
   function speakCurrentText() {
@@ -215,20 +236,40 @@ export default function Keyboard() {
     apiPost("/vocab/sentence", { words }).catch(() => {});
   }
 
+  function getProtectedLength() {
+    if (starterLength <= 0) return 0;
+    const starterWords = incomingWords.slice(0, starterLength);
+    return starterWords.join(" ").length + 1; // +1 for trailing space
+  }
+
   function pressKey(key) {
-    if (key === "DELETE") setText(t => t.slice(0, -1));
-    else setText(t => t + key.toLowerCase());
+    if (key === "DELETE") {
+      const protectedLen = getProtectedLength();
+      setText(t => t.length > protectedLen ? t.slice(0, -1) : t);
+    } else setText(t => t + key.toLowerCase());
   }
 
   function activateKey(key) {
     if (!key) return;
-    if (key === "DELETE") { setText(t => t.slice(0, -1)); return; }
+    if (key === "SCAN") {
+      setScanEnabled(!scanEnabledRef.current);
+      return;
+    }
+    if (key === "REPEAT") {
+      setEyeHoldRepeatEnabled(!eyeHoldRepeatEnabledRef.current);
+      return;
+    }
+    if (key === "DELETE") {
+      const protectedLen = getProtectedLength();
+      setText(t => t.length > protectedLen ? t.slice(0, -1) : t);
+      return;
+    }
     if (key === "SPACE") { setText(t => t + " "); return; }
     if (key === "TOGGLE_REPEAT") {
       setEyeHoldRepeatEnabled(!eyeHoldRepeatEnabledRef.current);
       return;
     }
-    if (key === "DONE") { speakCurrentText(); return; }
+    if (key === "DONE") { void goToCompose(); return; }
     pressKey(key);
   }
 
@@ -238,11 +279,12 @@ export default function Keyboard() {
   }
 
   useEffect(() => {
-    const lastRowLen = NAV_ROWS[3].length;
-    if (selRowRef.current === 3 && selColRef.current > lastRowLen - 1) {
-      setSelection(3, lastRowLen - 1);
+    const lastRowIdx = NAV_ROWS.length - 1;
+    const lastRowLen = NAV_ROWS[lastRowIdx]?.length || 1;
+    if (selRowRef.current === lastRowIdx && selColRef.current > lastRowLen - 1) {
+      setSelection(lastRowIdx, lastRowLen - 1);
     }
-    if (scanRowRef.current === 3 && scanColRef.current > lastRowLen - 1) {
+    if (scanRowRef.current === lastRowIdx && scanColRef.current > lastRowLen - 1) {
       setScanCol(lastRowLen - 1);
     }
   }, [mode]);
@@ -395,7 +437,8 @@ export default function Keyboard() {
 
       if (e.key === "Backspace") {
         e.preventDefault();
-        setText(t => t.slice(0, -1));
+        const protectedLen = getProtectedLength();
+        setText(t => t.length > protectedLen ? t.slice(0, -1) : t);
         return;
       }
 
@@ -407,7 +450,7 @@ export default function Keyboard() {
 
       if (e.key === "Enter") {
         e.preventDefault();
-        speakCurrentText();
+        void goToCompose();
         return;
       }
 
@@ -425,7 +468,7 @@ export default function Keyboard() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [speakCurrentText, persistAndReturn]);
+  }, [goToCompose, persistAndReturn]);
 
   useEffect(() => {
     const onPaste = (e) => {
@@ -445,10 +488,6 @@ export default function Keyboard() {
 
       <div style={s.page}>
       <div style={s.topBar}>
-        <button style={s.pill}
-          onClick={() => void persistAndReturn()}>
-          ← Back
-        </button>
         <div style={s.titleCluster}>
           <div style={s.titleSideSlot}>
             {enabled && indicatorDebug && (
@@ -460,35 +499,6 @@ export default function Keyboard() {
           <span style={s.label}>Keyboard</span>
           <div style={s.titleSideSlot} />
         </div>
-
-        {enabled && (
-          <div style={s.scanControlsWrap}>
-            <button
-              style={{ ...s.scanToggleBtn, ...(scanEnabled ? s.scanToggleBtnOn : {}) }}
-              onClick={() => setScanEnabled(v => !v)}
-            >
-              {scanEnabled ? "Scan: ON" : "Scan: OFF"}
-            </button>
-
-            {scanEnabled && (
-              <div style={s.scanSpeedWrap}>
-                <button
-                  style={s.scanStepBtn}
-                  onClick={() => setScanMs(ms => Math.max(SCAN_MIN_MS, ms - SCAN_STEP_MS))}
-                >
-                  -
-                </button>
-                <span style={s.scanSpeedValue}>{scanMs}ms</span>
-                <button
-                  style={s.scanStepBtn}
-                  onClick={() => setScanMs(ms => Math.min(SCAN_MAX_MS, ms + SCAN_STEP_MS))}
-                >
-                  +
-                </button>
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
       <div style={s.display}>
@@ -496,7 +506,7 @@ export default function Keyboard() {
           type="text"
           value={text}
           readOnly
-          placeholder="Start typing…"
+          placeholder="Start typing..."
           style={{
             ...s.displayInput,
             ...(text ? {} : { color: "rgba(255,255,255,0.2)" }),
@@ -505,10 +515,15 @@ export default function Keyboard() {
         />
       </div>
 
-      <div style={s.keysArea}>
+      <div style={{
+        ...s.keysArea,
+        marginTop: (mode === "eyes" || mode === "cnn") ? "1%" : "4%",
+      }}>
+        {/*
         {enabled && scanEnabled && mode === "eyes" && (
           <p style={s.scanGestureHint}>Hold DOWN to select · Hold UP to go back</p>
         )}
+        */}
 
         {/*
         {enabled && (
@@ -523,26 +538,68 @@ export default function Keyboard() {
         )}
         */}
 
+        {(mode === "eyes" || mode === "cnn") && (
+          <div
+            style={{
+              ...s.row,
+              ...s.controlRow,
+              ...(enabled && scanEnabled && scanPhase === "row" && scanRow === 0 ? s.scanRowActive : {}),
+            }}
+          >
+            <button style={{
+              ...s.key,
+              ...(scanEnabled ? s.toggleKeyOn : s.toggleKeyOff),
+              flex: 1,
+              ...((enabled && !scanEnabled && selRow === 0 && selCol === 0)
+                || (!enabled && hoveredKey === "scan")
+                || (enabled && scanEnabled && scanPhase === "item" && scanRow === 0 && scanCol === 0)
+                ? s.selectedKey
+                : (scanEnabled ? s.unselectedToggleOnKey : s.unselectedToggleOffKey)),
+            }}
+              onMouseEnter={() => setHoveredKey("scan")}
+              onMouseLeave={() => setHoveredKey(null)}
+              onClick={() => { setSelection(0, 0); setScanEnabled(!scanEnabled); }}>
+              {scanEnabled ? "Scan: ON" : "Scan: OFF"}
+            </button>
+            <button style={{
+              ...s.key,
+              ...(eyeHoldRepeatEnabled ? s.toggleKeyOn : s.toggleKeyOff),
+              flex: 1,
+              ...((enabled && !scanEnabled && selRow === 0 && selCol === 1)
+                || (!enabled && hoveredKey === "repeat")
+                || (enabled && scanEnabled && scanPhase === "item" && scanRow === 0 && scanCol === 1)
+                ? s.selectedKey
+                : (eyeHoldRepeatEnabled ? s.unselectedToggleOnKey : s.unselectedToggleOffKey)),
+            }}
+              onMouseEnter={() => setHoveredKey("repeat")}
+              onMouseLeave={() => setHoveredKey(null)}
+              onClick={() => { setSelection(0, 1); setEyeHoldRepeatEnabled(!eyeHoldRepeatEnabled); }}>
+              {eyeHoldRepeatEnabled ? "Repeat: ON" : "Repeat: OFF"}
+            </button>
+          </div>
+        )}
+
         {ROWS.map((row, ri) => (
           <div
             key={ri}
             style={{
               ...s.row,
               ...s.letterRow,
-              ...(enabled && scanEnabled && scanPhase === "row" && scanRow === ri ? s.scanRowActive : {}),
+              ...(enabled && scanEnabled && scanPhase === "row" && scanRow === ri + 1 ? s.scanRowActive : {}),
             }}
           >
             {row.map((key, ci) => {
               const keyId = `key-${ri}-${ci}`;
-              const isSelected = enabled && !scanEnabled && selRow === ri && selCol === ci;
+              const rowOffset = (mode === "eyes" || mode === "cnn") ? 1 : 0;
+              const isSelected = enabled && !scanEnabled && selRow === ri + rowOffset && selCol === ci;
               const isHovered = !enabled && hoveredKey === keyId;
-              const isScanSelected = enabled && scanEnabled && scanPhase === "item" && scanRow === ri && scanCol === ci;
+              const isScanSelected = enabled && scanEnabled && scanPhase === "item" && scanRow === ri + rowOffset && scanCol === ci;
               return (
                 <button key={`${ri}-${ci}-${key}`}
                   style={{ ...s.key, ...s.letterKey, ...((isSelected || isHovered || isScanSelected) ? s.selectedKey : s.unselectedKey) }}
                   onMouseEnter={() => setHoveredKey(keyId)}
                   onMouseLeave={() => setHoveredKey(null)}
-                  onClick={() => { setSelection(ri, ci); pressKey(key); }}>
+                  onClick={() => { setSelection(ri + rowOffset, ci); pressKey(key); }}>
                   {key}
                 </button>
               );
@@ -554,85 +611,75 @@ export default function Keyboard() {
           style={{
             ...s.row,
             ...s.actionRow,
-            ...(enabled && scanEnabled && scanPhase === "row" && scanRow === 3 ? s.scanRowActive : {}),
+            ...(enabled && scanEnabled && scanPhase === "row" && scanRow === 4 ? s.scanRowActive : {}),
           }}
         >
           <button
             style={{
               ...s.key,
               ...s.bsKey,
-              flex: 0.7,
-              ...((enabled && !scanEnabled && selRow === 3 && selCol === 0)
+              flex: 1,
+              ...((enabled && !scanEnabled && selRow === 4 && selCol === 0)
                 || (!enabled && hoveredKey === "delete")
-                || (enabled && scanEnabled && scanPhase === "item" && scanRow === 3 && scanCol === 0)
+                || (enabled && scanEnabled && scanPhase === "item" && scanRow === 4 && scanCol === 0)
                 ? s.selectedKey
                 : s.unselectedBackspaceKey),
             }}
             onMouseEnter={() => setHoveredKey("delete")}
             onMouseLeave={() => setHoveredKey(null)}
-            onClick={() => { setSelection(3, 0); setText(t => t.slice(0, -1)); }}>
+            onClick={() => { setSelection(4, 0); const protectedLen = getProtectedLength(); setText(t => t.length > protectedLen ? t.slice(0, -1) : t); }}>
             ⌫
           </button>
           <button style={{
             ...s.key,
-            flex: 1,
-            ...((enabled && !scanEnabled && selRow === 3 && selCol === 1)
+            flex: 2,
+            ...((enabled && !scanEnabled && selRow === 4 && selCol === 1)
               || (!enabled && hoveredKey === "space")
-              || (enabled && scanEnabled && scanPhase === "item" && scanRow === 3 && scanCol === 1)
+              || (enabled && scanEnabled && scanPhase === "item" && scanRow === 4 && scanCol === 1)
               ? s.selectedKey
               : s.unselectedKey),
           }}
             onMouseEnter={() => setHoveredKey("space")}
             onMouseLeave={() => setHoveredKey(null)}
-            onClick={() => { setSelection(3, 1); setText(t => t + " "); }}>
+            onClick={() => { setSelection(4, 1); setText(t => t + " "); }}>
             Space
           </button>
           <button
             style={{
               ...s.key,
-              ...s.doneKey,
-              flex: 0.7,
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "8px",
-              ...((!enabled && hoveredKey === "done")
-                ? s.doneHoverKey
-                : ((enabled && !scanEnabled && selRow === 3 && selCol === 2)
-                  || (enabled && scanEnabled && scanPhase === "item" && scanRow === 3 && scanCol === 2)
-                  ? s.doneSelectedKey
-                  : s.unselectedDoneKey)),
+              flex: 1,
+              ...((enabled && !scanEnabled && selRow === 4 && selCol === 2)
+                || (enabled && scanEnabled && scanPhase === "item" && scanRow === 4 && selCol === 2)
+                || (!enabled && hoveredKey === "done")
+                ? s.selectedKey
+                : s.unselectedKey),
             }}
             onMouseEnter={() => setHoveredKey("done")}
             onMouseLeave={() => setHoveredKey(null)}
             onClick={() => {
-              setSelection(3, 2);
-              speakCurrentText();
+              setSelection(4, 2);
+              void goToCompose();
             }}
           >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="18" height="18" aria-hidden="true">
-              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-              <path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07" />
-            </svg>
-            <span>Speak</span>
+            Done
           </button>
-          {(mode === "eyes" || mode === "cnn") && (
-            <button style={{
-              ...s.key,
-              ...(eyeHoldRepeatEnabled ? s.toggleKeyOn : s.toggleKeyOff),
-              flex: 1.2,
-              ...((enabled && !scanEnabled && selRow === 3 && selCol === 3)
-                || (!enabled && hoveredKey === "repeat")
-                || (enabled && scanEnabled && scanPhase === "item" && scanRow === 3 && scanCol === 3)
+          <button style={{
+            ...s.key,
+            ...s.backKeyStyle,
+            flex: 1,
+            ...((enabled && !scanEnabled && selRow === 4 && selCol === 3)
+              || (enabled && scanEnabled && scanPhase === "item" && scanRow === 4 && selCol === 3)
+              || (!enabled && hoveredKey === "back")
+              ? s.selectedKey
+              : (hoveredKey === "back"
                 ? s.selectedKey
-                : (eyeHoldRepeatEnabled ? s.unselectedToggleOnKey : s.unselectedToggleOffKey)),
-            }}
-              onMouseEnter={() => setHoveredKey("repeat")}
-              onMouseLeave={() => setHoveredKey(null)}
-              onClick={() => { setSelection(3, 3); setEyeHoldRepeatEnabled(!eyeHoldRepeatEnabled); }}>
-              {eyeHoldRepeatEnabled ? "Repeat: ON" : "Repeat: OFF"}
-            </button>
-          )}
+                : s.unselectedKey)),
+          }}
+            onMouseEnter={() => setHoveredKey("back")}
+            onMouseLeave={() => setHoveredKey(null)}
+            onClick={() => { setSelection(4, 3); persistAndReturn(); }}>
+            ← Back
+          </button>
         </div>
       </div>
       </div>
@@ -646,12 +693,13 @@ const s = {
     display: "flex", flexDirection: "column", padding: "16px", gap: "14px",
   },
   topBar: {
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
     position: "relative",
-    minHeight: "34px",
-    marginTop: "10px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    height: "34px",
+    flexShrink: 0,
+    marginTop: "12px",
   },
   titleCluster: {
     display: "grid",
@@ -677,7 +725,7 @@ const s = {
     top: "50%",
     right: 0,
     transform: "translateY(-50%)",
-    display: "flex",
+    display: "none",
     alignItems: "center",
     gap: 8,
     zIndex: 2,
@@ -730,9 +778,30 @@ const s = {
     fontSize: "13px", cursor: "pointer",
     zIndex: 2,
   },
+  backKeyStyle: {
+    background: "rgba(255,255,255,0.03)",
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: "rgba(255,255,255,0.08)",
+    borderRadius: "10px",
+    color: "rgba(255,255,255,0.85)",
+    fontSize: "17px",
+    fontWeight: 400,
+    padding: "0",
+    cursor: "pointer",
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "10px",
+    transition: "border-color 0.1s, background 0.1s, color 0.1s",
+  },
   label: {
-    fontSize: "14px", color: "rgba(255,255,255,0.35)",
-    letterSpacing: "0.1em", textTransform: "uppercase",
+    fontSize: "18px",
+    fontWeight: "300",
+    color: "rgba(255,255,255,0.5)",
+    letterSpacing: "0.1em",
+    textTransform: "uppercase",
     justifySelf: "center",
   },
   headHint: {
@@ -750,9 +819,16 @@ const s = {
     whiteSpace: "nowrap",
   },
   display: {
-    marginTop: "20px",
-    minHeight: "64px", padding: "14px 20px", borderRadius: "14px",
-    border: "1px solid rgba(255,255,255,0.08)", display: "flex", alignItems: "center", marginLeft: "30px", marginRight: "30px", marginTop: "3%",
+    background: "rgba(255,255,255,0.03)",
+    marginTop: "3%",
+    minHeight: "64px",
+    padding: "14px 20px",
+    borderRadius: "14px",
+    border: "1px solid rgba(255,255,255,0.08)",
+    display: "flex",
+    alignItems: "center",
+    marginLeft: "30px",
+    marginRight: "30px",
   },
   displayText: { fontSize: "26px", fontWeight: "300", color: "#ffffff" },
   placeholder: { fontSize: "20px", color: "rgba(255,255,255,0.2)" },
@@ -800,7 +876,7 @@ const s = {
     minHeight: 0,
     width: "90%",
     alignSelf: "center",
-    marginTop: "4%",
+    marginTop: "1%",
     marginBottom: "8px",
     justifyContent: "space-between",
     position: "relative",
@@ -828,15 +904,19 @@ const s = {
     transform: "scale(1.01)",
   },
   actionRow: {
-    width: "96%",
+    width: "90%",
     alignSelf: "center",
   },
   letterRow: {
     width: "100%",
     alignSelf: "center",
   },
+  controlRow: {
+    width: "100%",
+    alignSelf: "center",
+  },
   key: {
-    flex: 1, padding: "0", height: "68px", borderRadius: "10px",
+    flex: 1, padding: "0", height: "56px", borderRadius: "10px",
     background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
     color: "rgba(255,255,255,0.85)", fontSize: "17px", cursor: "pointer", transition: "background 0.1s",
   },
@@ -861,28 +941,28 @@ const s = {
     transform: "none",
   },
   doneKey: {
-    background: "rgba(255,255,255,0.11)", border: "1px solid rgba(255,255,255,0.22)", color: "rgba(255,255,255,1)",
-    fontWeight: "600", transition: "background 0.1s",
+    background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.85)",
+    fontWeight: "400", transition: "background 0.1s",
   },
   unselectedDoneKey: {
-    borderColor: "rgba(255,255,255,0.22)",
-    background: "rgba(255,255,255,0.11)",
-    color: "rgba(255,255,255,1)",
-    fontWeight: "600",
+    borderColor: "rgba(255,255,255,0.15)",
+    background: "rgba(255,255,255,0.10)",
+    color: "rgba(255,255,255,0.85)",
+    fontWeight: "400",
     boxShadow: "none",
     transform: "none",
   },
   doneSelectedKey: {
-    borderColor: "rgba(255,255,255,0.34)",
-    background: "rgba(255,255,255,0.18)",
-    color: "rgba(255,255,255,1)",
-    fontWeight: "700",
+    borderColor: "rgba(255,255,255,0.25)",
+    background: "rgba(255,255,255,0.16)",
+    color: "rgba(255,255,255,0.85)",
+    fontWeight: "400",
   },
   doneHoverKey: {
-    borderColor: "rgba(255,255,255,0.42)",
-    background: "rgba(255,255,255,0.24)",
-    color: "rgba(255,255,255,1)",
-    fontWeight: "700",
+    borderColor: "rgba(255,255,255,0.25)",
+    background: "rgba(255,255,255,0.16)",
+    color: "rgba(255,255,255,0.85)",
+    fontWeight: "400",
   },
   toggleKeyOn: {
     background: "rgba(255,255,255,0.03)",
