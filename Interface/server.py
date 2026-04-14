@@ -613,8 +613,8 @@ def debug_cnn_page():
 # ── Head control (merged from control-service) ───────────────────────────────
 _head_lock = threading.Lock()
 _head_alpha = 0.5
-_head_threshold = 1.5
-_head_deadzone = 1.0
+_head_threshold = 0.35
+_head_deadzone = 0.1
 _head_filtered_x = 0.0
 _head_filtered_y = 0.0
 _head_filtered_z = 0.0
@@ -627,25 +627,25 @@ _last_head_detect_log_ms = 0
 def _head_detect_command(x: float, y: float) -> Optional[str]:
     global _last_head_detect_log_ms
 
-    threshold = 0.35
+    threshold = _head_threshold
+    deadzone = _head_deadzone
     now_ms = int(time.time() * 1000)
     if now_ms - _last_head_detect_log_ms >= 100:
-        print(f"[HEAD DETECT] x={round(x,3)} y={round(y,3)} threshold={threshold}")
+        print(
+            f"[HEAD DETECT] x={round(x,3)} y={round(y,3)} "
+            f"threshold={round(threshold,3)} deadzone={round(deadzone,3)}"
+        )
         _last_head_detect_log_ms = now_ms
 
-    if abs(x) < 0.1 and abs(y) < 0.1:
+    if abs(x) < deadzone and abs(y) < deadzone:
         return None
 
-    if abs(x) > abs(y):
-        if x > threshold:
-            return "RIGHT"
-        if x < -threshold:
-            return "LEFT"
-    else:
-        if y > threshold:
-            return "DOWN"
-        if y < -threshold:
-            return "UP"
+    if abs(x) > threshold:
+        return "RIGHT" if x > 0 else "LEFT"
+
+    if abs(y) > threshold:
+        return "DOWN" if y > 0 else "UP"
+
     return None
 
 
@@ -939,9 +939,14 @@ def head_update_settings(body: HeadSettingsRequest):
         if body.alpha is not None:
             _head_alpha = float(body.alpha)
         if body.threshold is not None:
-            _head_threshold = float(body.threshold)
+            _head_threshold = max(0.1, min(1.0, float(body.threshold)))
         if body.deadzone is not None:
-            _head_deadzone = float(body.deadzone)
+            _head_deadzone = max(0.01, min(0.5, float(body.deadzone)))
+
+        if _head_deadzone >= _head_threshold:
+            _head_deadzone = max(0.01, min(0.5, _head_threshold * 0.5))
+
+        print("[HEAD SETTINGS UPDATED]", _head_threshold, _head_deadzone, _head_alpha)
 
         return {
             "alpha": _head_alpha,

@@ -54,9 +54,13 @@ export function createHeadProcessor(config = {}) {
 	function process(input) {
 		const now = Number.isFinite(input?.timestamp) ? Number(input.timestamp) : Date.now();
 		const inputDirection = normalizeDirectionLabel(input?.command) || DIRECTIONS.CENTER;
+		console.log("SELECTION METHOD:", selectionMethod);
 
 		let direction = inputDirection;
-		if (inputDirection !== state.lastDirection) {
+		if (inputDirection === DIRECTIONS.CENTER) {
+			state.lastDirection = DIRECTIONS.CENTER;
+			state.lastDirectionTime = now;
+		} else if (inputDirection !== state.lastDirection) {
 			if (now - state.lastDirectionTime >= directionDebounceMs) {
 				state.lastDirection = inputDirection;
 				state.lastDirectionTime = now;
@@ -71,6 +75,8 @@ export function createHeadProcessor(config = {}) {
 		let isStable = false;
 
 		if (direction === DIRECTIONS.CENTER) {
+			state.navLock = null;
+			console.log("UNLOCK (CENTER)");
 			debugState = "center-hold";
 			const hadSelectionHold = state.selectionStartTime != null;
 			const holdElapsedMs = hadSelectionHold ? now - state.selectionStartTime : 0;
@@ -88,7 +94,6 @@ export function createHeadProcessor(config = {}) {
 				reason = "RELEASE_TO_MOVE";
 			}
 
-			state.navLock = null;
 			state.rawDirection = null;
 			state.rawStartTime = 0;
 			state.stableFrames = 0;
@@ -174,6 +179,10 @@ export function createHeadProcessor(config = {}) {
 			state.selectionStartTime == null
 				? 0
 				: clamp01((now - state.selectionStartTime) / Math.max(selectionDwell, 1));
+		const remainingMs =
+			state.selectionStartTime == null
+				? 0
+				: Math.max(0, selectionDwell - (now - state.selectionStartTime));
 
 		return {
 			command,
@@ -183,6 +192,9 @@ export function createHeadProcessor(config = {}) {
 				reason,
 				state: debugState,
 				progress,
+				remainingMs,
+				selectionMethod,
+				navLockDir: state.navLock,
 				selectionStartMs: state.selectionStartTime,
 				selectionDwell,
 			},

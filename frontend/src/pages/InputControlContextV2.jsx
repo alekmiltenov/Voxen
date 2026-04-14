@@ -1,6 +1,7 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import InputManager from "../input/manager/InputManager";
 import { useEyeTracking } from "../input/eyes/useEyeTracking";
+import { DIRECTIONS, normalizeDirectionLabel } from "../input/shared/timingUtils";
 
 const BACKEND_SERVER = "http://localhost:8000";
 const HEAD_SERVER = BACKEND_SERVER;
@@ -69,14 +70,44 @@ const getSelectionDwell = () => {
 	}
 };
 
-const getHeadSelectionMethod = () => {
+const getCnnSelectionMethod = () => {
 	try {
-		const saved = String(localStorage.getItem("headSelectionMethod") || "down").toLowerCase();
+		const saved = String(localStorage.getItem("cnnSelectionMethod") || "down").toLowerCase();
 		if (saved === "forward" || saved === "back") return "DOWN";
 		if (["left", "right", "up", "down", "center"].includes(saved)) return saved.toUpperCase();
 		return "DOWN";
 	} catch {
 		return "DOWN";
+	}
+};
+
+const getCnnSelectionDwell = () => {
+	try {
+		const saved = parseInt(localStorage.getItem("cnnSelectionDwell") || "", 10);
+		return Number.isFinite(saved) ? saved : 650;
+	} catch {
+		return 650;
+	}
+};
+
+const getCnnSelectionReleaseMin = () => {
+	try {
+		const saved = parseInt(localStorage.getItem("cnnSelectionReleaseMin") || "", 10);
+		return Number.isFinite(saved) ? saved : 80;
+	} catch {
+		return 80;
+	}
+};
+
+const getHeadSelectionMethod = () => {
+	try {
+		const saved = String(localStorage.getItem("headSelectionMethod") || "right").toLowerCase();
+		if (["left", "right", "up", "down", "center"].includes(saved)) {
+			return saved.toUpperCase();
+		}
+		return "RIGHT";
+	} catch {
+		return "RIGHT";
 	}
 };
 
@@ -89,22 +120,12 @@ const getInitialCenterSelectMinConfidence = () => {
 	}
 };
 
-const getInitialCenterSelectNoiseDelta = () => {
-	try {
-		const saved = parseFloat(localStorage.getItem("cnnCenterSelectNoiseDelta") || "");
-		return Number.isFinite(saved) ? Math.max(0.01, Math.min(0.2, saved)) : 0.06;
-	} catch {
-		return 0.06;
-	}
-};
-
 const InputControlContext = createContext(null);
 
 const isPlainObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
-const normalizeSelectionMethod = (value, fallback = "DOWN") => {
-	const normalized = String(value || "").toUpperCase();
-	if (normalized === "FORWARD" || normalized === "BACK") return "DOWN";
-	if (["LEFT", "RIGHT", "UP", "DOWN", "CENTER"].includes(normalized)) return normalized;
+const normalizeHeadSelectionMethod = (value, fallback = "RIGHT") => {
+	const normalized = normalizeDirectionLabel(value);
+	if (normalized) return normalized;
 	return fallback;
 };
 
@@ -125,12 +146,14 @@ const buildDefaultControlConfig = () => ({
 	},
 	cnn: {
 		cnnMinConfidence: 0.45,
-		minStableFrames: 2,
 		commandDelay: 120,
+		selectionMethod: getCnnSelectionMethod(),
+		selectionDwell: getCnnSelectionDwell(),
+		selectionReleaseMin: getCnnSelectionReleaseMin(),
+		repeatEnabled: false,
+		repeatDelay: 180,
 		centerSelectEnabled: false,
 		centerSelectMinConfidence: getInitialCenterSelectMinConfidence(),
-		centerSelectMinStableFrames: 2,
-		centerSelectNoiseDelta: getInitialCenterSelectNoiseDelta(),
 	},
 	head: {
 		selectionMethod: getHeadSelectionMethod(),
@@ -158,7 +181,10 @@ const mergeControlConfig = (defaults, saved) => ({
 	head: {
 		...defaults.head,
 		...(isPlainObject(saved?.head) ? saved.head : {}),
-		selectionMethod: normalizeSelectionMethod(saved?.head?.selectionMethod, defaults.head.selectionMethod),
+		selectionMethod: normalizeHeadSelectionMethod(
+			saved?.head?.selectionMethod,
+			defaults.head.selectionMethod
+		),
 	},
 });
 
@@ -173,11 +199,10 @@ export function InputControlProvider({ children }) {
 
 	const enabled = mode !== "off";
 
-	const [holdDuration, setHoldDuration] = useState(500);
 	const [sensorSettings, setSensorSettings] = useState({
 		alpha: 0.5,
-		threshold: 1.5,
-		deadzone: 1.0,
+		threshold: 0.35,
+		deadzone: 0.1,
 	});
 
 	const [eyeDebug, setEyeDebug] = useState(null);
@@ -197,6 +222,8 @@ export function InputControlProvider({ children }) {
 		}
 	});
 
+	const stableHeadConfig = useMemo(() => controlConfig.head, [controlConfig.head]);
+
 	const modeRef = useRef(mode);
 	const handlerRef = useRef(null);
 	const autoCenterDoneRef = useRef(false);
@@ -204,7 +231,7 @@ export function InputControlProvider({ children }) {
 	const centerRef = useRef(controlConfig.eyes.center || { x: 0, y: 0 });
 	const eyesConfigRef = useRef(controlConfig.eyes);
 	const cnnConfigRef = useRef(controlConfig.cnn);
-	const headConfigRef = useRef(controlConfig.head);
+	const headConfigRef = useRef(stableHeadConfig);
 
 	const dispatch = useCallback((cmd) => {
 		if (modeRef.current === "off") return;
@@ -243,7 +270,9 @@ export function InputControlProvider({ children }) {
 			head: {
 				...prev.head,
 				...partial,
-				selectionMethod: normalizeSelectionMethod(partial?.selectionMethod ?? prev.head.selectionMethod),
+				selectionMethod: normalizeHeadSelectionMethod(
+					partial?.selectionMethod ?? prev.head.selectionMethod
+				),
 			},
 		}));
 	}, []);
@@ -280,8 +309,8 @@ export function InputControlProvider({ children }) {
 	}, [controlConfig.cnn]);
 
 	useEffect(() => {
-		headConfigRef.current = controlConfig.head;
-	}, [controlConfig.head]);
+		headConfigRef.current = stableHeadConfig;
+	}, [stableHeadConfig]);
 
 	const register = useCallback((fn) => {
 		handlerRef.current = fn;
@@ -350,16 +379,6 @@ export function InputControlProvider({ children }) {
 		updateCnnConfig({ centerSelectMinConfidence: next });
 		try {
 			localStorage.setItem("cnnCenterSelectMinConfidence", String(next));
-		} catch {
-			// ignore storage errors
-		}
-	}, [updateCnnConfig]);
-
-	const setCenterSelectNoiseDelta = useCallback((value) => {
-		const next = Math.max(0.01, Math.min(0.2, Number(value) || 0.06));
-		updateCnnConfig({ centerSelectNoiseDelta: next });
-		try {
-			localStorage.setItem("cnnCenterSelectNoiseDelta", String(next));
 		} catch {
 			// ignore storage errors
 		}
@@ -458,20 +477,18 @@ export function InputControlProvider({ children }) {
 	useEffect(() => {
 		if (mode !== "head") return;
 
-		if (window.location.hostname !== "localhost") {
-			fetch(`${HEAD_SERVER}/head/settings`)
-				.then((response) => response.json())
-				.then((settings) => {
-					setSensorSettings({
-						alpha: settings.alpha ?? 0.5,
-						threshold: settings.threshold ?? 1.5,
-						deadzone: settings.deadzone ?? 1.0,
-					});
-				})
-				.catch(() => {
-					// keep defaults
+		fetch(`${HEAD_SERVER}/head/settings`)
+			.then((response) => response.json())
+			.then((settings) => {
+				setSensorSettings({
+					alpha: settings.alpha ?? 0.5,
+					threshold: settings.threshold ?? 0.35,
+					deadzone: settings.deadzone ?? 0.1,
 				});
-		}
+			})
+			.catch(() => {
+				// keep defaults
+			});
 
 		let ws;
 		let reconnectTimer;
@@ -485,21 +502,38 @@ export function InputControlProvider({ children }) {
 				try {
 					const data = JSON.parse(event.data);
 					console.log("[HEAD FRONTEND]", data);
-					const command = data?.command;
+
+					// MODE CHECK
+					console.log("MODE:", modeRef.current);
+console.log("[HEAD RAW FULL]", data);
+					const commandRaw = data?.command || data?.cmd;
+					const command =
+						typeof commandRaw === "string"
+							? commandRaw.toUpperCase()
+							: "CENTER";
+
+					// RAW debug log before processor
+					console.log("[HEAD RAW]", command);
+
 					const result = inputManagerRef.current?.handleHead(
 						{
 							command,
 							confidence: data?.confidence,
-							timestamp: Date.now(),
+							timestamp: data?.timestamp,
 							debug: data?.debug,
 						},
 						headConfigRef.current
 					);
 
+					// Processor debug log after processing
+					console.log("[HEAD PROCESSED]", result?.command || "NONE");
+
 					setHeadDebug({
-						...result?.debug,
+						rawCommand: command,
+						processedCommand: result?.command || "NONE",
 						direction: result?.debug?.direction || command || "NONE",
 						confidence: data?.confidence ?? 0,
+						...(result?.debug || {}),
 					});
 				} catch {
 					// ignore malformed frame
@@ -523,15 +557,13 @@ export function InputControlProvider({ children }) {
 
 	const updateSensorSettings = useCallback((newSettings) => {
 		setSensorSettings(newSettings);
-		if (window.location.hostname !== "localhost") {
-			fetch(`${HEAD_SERVER}/head/settings`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(newSettings),
-			}).catch(() => {
-				// ignore update errors
-			});
-		}
+		fetch(`${HEAD_SERVER}/head/settings`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(newSettings),
+		}).catch(() => {
+			// ignore update errors
+		});
 	}, []);
 
 	return (
@@ -547,8 +579,6 @@ export function InputControlProvider({ children }) {
 				register,
 				unregister,
 				dispatch,
-				holdDuration,
-				setHoldDuration,
 				sensorSettings,
 				updateSensorSettings,
 				eyeReady,
@@ -569,8 +599,6 @@ export function InputControlProvider({ children }) {
 				cnnDebug,
 				centerSelectMinConfidence: Number(controlConfig.cnn.centerSelectMinConfidence || 0),
 				setCenterSelectMinConfidence,
-				centerSelectNoiseDelta: Number(controlConfig.cnn.centerSelectNoiseDelta || 0),
-				setCenterSelectNoiseDelta,
 			}}
 		>
 			{children}
@@ -587,8 +615,6 @@ export const useHeadControl = () => {
 		register: ctx.register,
 		unregister: ctx.unregister,
 		toggle: () => ctx.setControlMode(ctx.mode === "off" ? "head" : "off"),
-		holdDuration: ctx.holdDuration,
-		setHoldDuration: ctx.setHoldDuration,
 		sensorSettings: ctx.sensorSettings,
 		updateSensorSettings: ctx.updateSensorSettings,
 	};

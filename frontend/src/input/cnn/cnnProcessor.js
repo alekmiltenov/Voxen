@@ -9,7 +9,7 @@ const DIRECTIONS = {
 
 const DEFAULTS = {
 	cnnMinConfidence: 0.45,
-	commandDelay: 80,
+	commandDelay: 120,
 	selectionMethod: "DOWN",
 	selectionDwell: 650,
 	selectionReleaseMin: 80,

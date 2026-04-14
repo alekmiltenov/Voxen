@@ -5,6 +5,14 @@ import { apiGet, apiPost } from "../api";
 
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 const lerp = (a, b, t) => a + (b - a) * t;
+const normalizeHeadThreshold = (value) => clamp(Number(value) || 0.35, 0.1, 1.0);
+const normalizeHeadDeadzone = (value, threshold) => {
+  let dz = clamp(Number(value) || 0.1, 0.01, 0.5);
+  if (dz >= threshold) {
+    dz = clamp(Number((threshold * 0.5).toFixed(3)), 0.01, 0.5);
+  }
+  return dz;
+};
 
 function antiJitterToBackendSettings(level) {
   const t = clamp(Number(level) || 0, 0, 50) / 50;
@@ -36,58 +44,19 @@ function antiJitterLabel(level) {
 export default function Settings() {
   const navigate = useNavigate();
   const {
+    controlConfig,
     mode, enabled, register, unregister,
-    holdDuration, setHoldDuration,
-    sensorSettings, updateSensorSettings,
+    updateEyesConfig, updateCnnConfig, updateHeadConfig,
+    sensorSettings,
     eyeReady, eyeCentered,
-    recenterEyes, setYBias, setCenterBuffer, setCommandDelay,
-    eyeHoldRepeatEnabled, setEyeHoldRepeatEnabled,
-    eyeHoldRepeatDelay, setEyeHoldRepeatDelay,
+    recenterEyes,
     cnnReady, gazeLabel,
-    centerSelectMinConfidence, setCenterSelectMinConfidence,
-    centerSelectNoiseDelta, setCenterSelectNoiseDelta,
   } = useInputControl();
-
-  const [localYBias, setLocalYBias] = useState(() => {
-    try {
-      const saved = localStorage.getItem("eyeYBias");
-      return saved ? parseFloat(saved) : 0;
-    } catch { return 0; }
+  const [activeTab, setActiveTab] = useState(() => {
+    if (mode === "head" || mode === "cnn" || mode === "eyes") return mode;
+    return "eyes";
   });
-  const [localCenterBuffer, setLocalCenterBuffer] = useState(() => {
-    try {
-      const saved = localStorage.getItem("centerBuffer");
-      return saved ? parseFloat(saved) : 0.05;
-    } catch { return 0.05; }
-  });
-  const [localCommandDelay, setLocalCommandDelay] = useState(() => {
-    try {
-      const saved = localStorage.getItem("eyeCommandDelay");
-      return saved ? parseFloat(saved) : 350;
-    } catch { return 350; }
-  });
-  const [selectionMethod, setSelectionMethod] = useState(() => {
-    try {
-      const saved = (localStorage.getItem("eyeSelectionMethod") || "right").toLowerCase();
-      if (saved === "closed") return "center";
-      return ["left", "right", "up", "down", "center"].includes(saved) ? saved : "right";
-    } catch { return "right"; }
-  });
-  const [selectionDwell, setSelectionDwell] = useState(() => {
-    try {
-      const saved = localStorage.getItem("eyeSelectionDwell");
-      return saved ? parseInt(saved) : 1500;
-    } catch { return 1500; }
-  });
-  const [mediapiaCenterMode, setMediapiaCenterMode] = useState(() => 
-    localStorage.getItem("mediapiapeCenterMode") || "disabled"
-  );
-  const [headSelectionMethod, setHeadSelectionMethod] = useState(() => {
-    try {
-      const saved = localStorage.getItem("headSelectionMethod");
-      return saved || "forward";
-    } catch { return "forward"; }
-  });
+  const [advancedOpen, setAdvancedOpen] = useState({ eyes: false, head: false, cnn: false });
   const [cnnAntiJitterLevel, setCnnAntiJitterLevel] = useState(() => {
     try {
       const saved = localStorage.getItem("cnnAntiJitterLevel");
@@ -97,49 +66,6 @@ export default function Settings() {
   const [cnnSettingsStatus, setCnnSettingsStatus] = useState("");
   const [cnnSettingsLoaded, setCnnSettingsLoaded] = useState(false);
 
-  // Persist Y-bias to localStorage whenever it changes
-  useEffect(() => {
-    try {
-      localStorage.setItem("eyeYBias", localYBias.toString());
-    } catch {}
-  }, [localYBias]);
-
-  // Persist center buffer to localStorage whenever it changes
-  useEffect(() => {
-    try {
-      localStorage.setItem("centerBuffer", localCenterBuffer.toString());
-    } catch {}
-  }, [localCenterBuffer]);
-
-  // Persist command delay to localStorage whenever it changes
-  useEffect(() => {
-    try {
-      localStorage.setItem("eyeCommandDelay", localCommandDelay.toString());
-    } catch {}
-  }, [localCommandDelay]);
-
-  // Persist selection method
-  useEffect(() => {
-    try {
-      localStorage.setItem("eyeSelectionMethod", selectionMethod);
-    } catch {}
-  }, [selectionMethod]);
-
-  // Persist selection dwell
-  useEffect(() => {
-    try {
-      localStorage.setItem("eyeSelectionDwell", selectionDwell.toString());
-    } catch {}
-  }, [selectionDwell]);
-
-  // Persist HEAD selection method
-  useEffect(() => {
-    try {
-      localStorage.setItem("headSelectionMethod", headSelectionMethod);
-    } catch {}
-  }, [headSelectionMethod]);
-
-  // Persist unified anti-jitter level
   useEffect(() => {
     try {
       localStorage.setItem("cnnAntiJitterLevel", String(Math.round(cnnAntiJitterLevel)));
@@ -171,16 +97,51 @@ export default function Settings() {
     return () => { alive = false; };
   }, []);
 
-  const handleSensor = (key, value) =>
-    updateSensorSettings({ ...sensorSettings, [key]: value });
+  const eyesSelectionMethod = String(controlConfig?.eyes?.selectionMethod || "right").toLowerCase();
+  const eyesSelectionDwell = Number(controlConfig?.eyes?.selectionDwell ?? 650);
+  const eyesCommandDelay = Number(controlConfig?.eyes?.commandDelay ?? 120);
+  const eyesYBias = Number(controlConfig?.eyes?.yBias ?? 0);
+  const eyesCenterBuffer = Number(controlConfig?.eyes?.centerBuffer ?? 0.05);
+  const eyesRepeatEnabled = !!controlConfig?.eyes?.repeatEnabled;
+  const eyesRepeatDelay = Number(controlConfig?.eyes?.repeatDelay ?? 180);
 
-  const handleMediapiaCenterModeChange = (value) => {
-    setMediapiaCenterMode(value);
-    localStorage.setItem("mediapiapeCenterMode", value);
-  };
+  const headSelectionDwell = Number(controlConfig?.head?.selectionDwell ?? 650);
+  const headCommandDelay = Number(controlConfig?.head?.commandDelay ?? 120);
+  const headSensitivityRaw = Number(controlConfig?.head?.sensitivity ?? sensorSettings?.threshold ?? 0.35);
+  const headSensitivity = normalizeHeadThreshold(headSensitivityRaw);
+  const headSmoothing = Number(controlConfig?.head?.smoothing ?? sensorSettings?.alpha ?? 0.5);
+  const headDeadzoneRaw = Number(controlConfig?.head?.deadzone ?? sensorSettings?.deadzone ?? 0.1);
+  const headDeadzone = normalizeHeadDeadzone(headDeadzoneRaw, headSensitivity);
+
+  const cnnSelectionMethod = String(controlConfig?.cnn?.selectionMethod || "DOWN").toLowerCase();
+  const cnnSelectionDwell = Number(controlConfig?.cnn?.selectionDwell ?? 650);
+  const cnnCommandDelay = Number(controlConfig?.cnn?.commandDelay ?? 120);
+  const cnnMinConfidence = Number(controlConfig?.cnn?.cnnMinConfidence ?? 0.45);
+  const cnnStableFrames = Number(controlConfig?.cnn?.stableFrames ?? 4);
+  const cnnRepeatEnabled = !!controlConfig?.cnn?.repeatEnabled;
+  const cnnRepeatDelay = Number(controlConfig?.cnn?.repeatDelay ?? 180);
+  const centerSelectMinConfidence = Number(controlConfig?.cnn?.centerSelectMinConfidence ?? 0.85);
+  const headSelectionMethod = String(controlConfig?.head?.selectionMethod || "RIGHT").toLowerCase();
 
   useEffect(() => {
-    if (!cnnSettingsLoaded || mode !== "cnn") return;
+    const thresholdChanged = Math.abs(headSensitivityRaw - headSensitivity) > 1e-6;
+    const deadzoneChanged = Math.abs(headDeadzoneRaw - headDeadzone) > 1e-6;
+    if (thresholdChanged || deadzoneChanged) {
+      updateHeadConfig({ sensitivity: headSensitivity, deadzone: headDeadzone });
+    }
+
+    const t = setTimeout(() => {
+      apiPost("/head/settings", {
+        alpha: headSmoothing,
+        threshold: headSensitivity,
+        deadzone: headDeadzone,
+      }).catch(() => {});
+    }, 250);
+    return () => clearTimeout(t);
+  }, [headSmoothing, headSensitivity, headDeadzone, headSensitivityRaw, headDeadzoneRaw, updateHeadConfig]);
+
+  useEffect(() => {
+    if (!cnnSettingsLoaded) return;
 
     setCnnSettingsStatus("Saving…");
     const t = setTimeout(async () => {
@@ -195,7 +156,7 @@ export default function Settings() {
     }, 300);
 
     return () => clearTimeout(t);
-  }, [cnnAntiJitterLevel, cnnSettingsLoaded, mode]);
+  }, [cnnAntiJitterLevel, cnnSettingsLoaded]);
 
   return (
     <div style={s.page}>
@@ -206,106 +167,115 @@ export default function Settings() {
       </div>
 
       <div style={s.content}>
-
-        {/* ── Current mode display ── */}
         <section style={s.section}>
           <div style={s.sectionHeader}>
-            <span style={s.sectionIcon}>🎮</span>
+            <span style={s.sectionIcon}>🎛️</span>
             <div>
-              <p style={s.sectionTitle}>Control Mode</p>
-              <p style={s.sectionSub}>
-                Currently: <strong style={{ color: "rgba(255,255,255,0.7)" }}>
-                  {mode === "off" ? "Off" : mode === "head" ? "Head Control" : "Eye Control"}
-                </strong>
-                &nbsp;— change on home screen
-              </p>
+              <p style={s.sectionTitle}>Control Panel</p>
+              <p style={s.sectionSub}>Current mode: <strong style={{ color: "rgba(255,255,255,0.72)" }}>{mode.toUpperCase()}</strong></p>
             </div>
+          </div>
+
+          <div style={s.tabsRow}>
+            {[
+              { id: "eyes", label: "Eyes" },
+              { id: "head", label: "Head" },
+              { id: "cnn", label: "CNN" },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                style={{ ...s.tabBtn, ...(activeTab === tab.id ? s.tabBtnActive : {}) }}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
         </section>
 
-        {/* ── Head mode: Interaction + Sensor ── */}
-        {mode === "head" && (
+        {activeTab === "eyes" && (
           <>
+            <SectionHeader title="Basic" subtitle="Core interaction settings" onReset={() => updateEyesConfig({ selectionMethod: "right", selectionDwell: 650, commandDelay: 120 })} />
             <section style={s.section}>
-              <div style={s.sectionHeader}>
-                <span style={s.sectionIcon}>⏱</span>
-                <div>
-                  <p style={s.sectionTitle}>Interaction</p>
-                  <p style={s.sectionSub}>Controls how the head input feels</p>
-                </div>
-              </div>
-              <div style={s.row}>
-                <ControlLabel text="Selection Command" help="Choose which head movement performs confirm/select." />
-                <select 
-                  value={headSelectionMethod} 
-                  onChange={(e) => setHeadSelectionMethod(e.target.value)}
-                  style={{
-                    padding: "10px 12px",
-                    borderRadius: "8px",
-                    border: "1.5px solid rgba(255,255,255,0.15)",
-                    backgroundColor: "rgba(17,24,39,0.8)",
-                    color: "#fff",
-                    fontFamily: "inherit",
-                    fontSize: "14px",
-                    cursor: "pointer",
-                  }}
-                >
-                  <option value="forward">FORWARD · confirm/select</option>
-                  <option value="back">BACK · confirm/select</option>
+              <div style={s.selectRow}>
+                <ControlLabel text="Selection method" help="Which direction confirms/selects after dwell." />
+                <select value={eyesSelectionMethod} onChange={e => updateEyesConfig({ selectionMethod: e.target.value })} style={s.selectInput}>
+                  <option value="right">RIGHT (hold right)</option>
+                  <option value="left">LEFT (hold left)</option>
+                  <option value="up">UP (hold up)</option>
+                  <option value="down">DOWN (hold down)</option>
+                  <option value="center">CENTER (hold center)</option>
                 </select>
               </div>
-              <p style={s.hint}>Which head motion triggers selection</p>
               <Divider />
-              <SliderRow label="Hold Duration" hint="How long to hold selection command"
-                value={holdDuration} display={`${holdDuration} ms`}
-                help="Longer hold reduces accidental selects but feels slower."
-                min={200} max={1200} step={50} accent="#a78bfa" onChange={setHoldDuration} />
+              <SliderRow label="Selection dwell" hint="How long to hold the selected direction" value={eyesSelectionDwell} display={`${Math.round(eyesSelectionDwell)} ms`} min={500} max={3000} step={100} accent="#22c55e" onChange={v => updateEyesConfig({ selectionDwell: v })} />
+              <Divider />
+              <SliderRow label="Command delay" hint="Time between commands" value={eyesCommandDelay} display={`${Math.round(eyesCommandDelay)} ms`} min={100} max={1200} step={50} accent="#22c55e" onChange={v => updateEyesConfig({ commandDelay: v })} />
             </section>
 
+            <SectionHeader title="Tuning" subtitle="Eye tracking behavior" onReset={() => updateEyesConfig({ yBias: 0, centerBuffer: 0.05 })} />
             <section style={s.section}>
-              <div style={s.sectionHeader}>
-                <span style={s.sectionIcon}>📡</span>
-                <div>
-                  <p style={s.sectionTitle}>Sensor</p>
-                  <p style={s.sectionSub}>Tune the MPU6050 signal processing</p>
-                </div>
+              <SliderRow label="Y bias" hint="Fix vertical drift" value={eyesYBias} display={eyesYBias.toFixed(2)} min={-2.0} max={2.0} step={0.05} accent="#22c55e" onChange={v => updateEyesConfig({ yBias: v })} />
+              <Divider />
+              <SliderRow label="Center buffer" hint="Higher = calmer center" value={eyesCenterBuffer} display={eyesCenterBuffer.toFixed(2)} min={0.0} max={1.5} step={0.01} accent="#22c55e" onChange={v => updateEyesConfig({ centerBuffer: v })} />
+              <Divider />
+              <div style={s.toggleRow}>
+                <span style={s.selectLabelRow}><span style={s.selectLabel}>Hold-to-repeat navigation</span><HelpIcon text="Repeat movement while gaze is held in one direction." /></span>
+                <button type="button" onClick={() => updateEyesConfig({ repeatEnabled: !eyesRepeatEnabled })} style={{ ...s.toggleBtn, ...(eyesRepeatEnabled ? s.toggleBtnOn : s.toggleBtnOff) }}>{eyesRepeatEnabled ? "ON" : "OFF"}</button>
               </div>
-              <SliderRow label="Responsiveness (alpha)" hint="Higher = faster reaction"
-                value={sensorSettings.alpha} display={sensorSettings.alpha.toFixed(2)}
-                help="How quickly head-control reacts to movement changes."
-                min={0.1} max={1.0} step={0.05} accent="#38bdf8"
-                onChange={v => handleSensor("alpha", v)} />
+              {eyesRepeatEnabled && <SliderRow label="Repeat delay" hint="Delay between repeated jumps" value={eyesRepeatDelay} display={`${Math.round(eyesRepeatDelay)} ms`} min={60} max={1200} step={20} accent="#22c55e" onChange={v => updateEyesConfig({ repeatDelay: v })} />}
               <Divider />
-              <SliderRow label="Sensitivity (threshold)" hint="Lower = triggers on smaller tilts"
-                value={sensorSettings.threshold} display={sensorSettings.threshold.toFixed(1)}
-                help="Minimum tilt strength needed before a command is recognized."
-                min={0.5} max={5.0} step={0.1} accent="#38bdf8"
-                onChange={v => handleSensor("threshold", v)} />
-              <Divider />
-              <SliderRow label="Deadzone" hint="Ignore micro-movements below this"
-                value={sensorSettings.deadzone} display={sensorSettings.deadzone.toFixed(1)}
-                help="Ignores tiny involuntary movements around neutral position."
-                min={0.1} max={2.0} step={0.1} accent="#38bdf8"
-                onChange={v => handleSensor("deadzone", v)} />
+              <button style={s.recenterBtn} onClick={recenterEyes}>Re-center eye tracking</button>
+              <p style={s.metaText}>{eyeCentered ? "Centered and tracking" : eyeReady ? "Centering…" : "Initializing camera…"}</p>
             </section>
 
+            <SectionHeader title="Advanced" subtitle="Fine control" collapsible open={advancedOpen.eyes} onToggle={() => setAdvancedOpen(p => ({ ...p, eyes: !p.eyes }))} onReset={() => updateEyesConfig({ debounceMs: 200, minStableFrames: 2, directionDebounceMs: 80, selectionReleaseMin: 80 })} />
+            {advancedOpen.eyes && (
+              <section style={s.section}>
+                <SliderRow label="Reaction delay" hint="Direction must stay stable before it counts" value={Number(controlConfig?.eyes?.debounceMs ?? 200)} display={`${Math.round(Number(controlConfig?.eyes?.debounceMs ?? 200))} ms`} min={0} max={800} step={20} accent="#22c55e" onChange={v => updateEyesConfig({ debounceMs: v })} />
+                <Divider />
+                <SliderRow label="Stability frames" hint="How many stable frames are required" value={Number(controlConfig?.eyes?.minStableFrames ?? 2)} display={`${Math.round(Number(controlConfig?.eyes?.minStableFrames ?? 2))}`} min={1} max={10} step={1} accent="#22c55e" onChange={v => updateEyesConfig({ minStableFrames: v })} />
+                <Divider />
+                <SliderRow label="Direction debounce" hint="Delay before direction switch is accepted" value={Number(controlConfig?.eyes?.directionDebounceMs ?? 80)} display={`${Math.round(Number(controlConfig?.eyes?.directionDebounceMs ?? 80))} ms`} min={0} max={300} step={10} accent="#22c55e" onChange={v => updateEyesConfig({ directionDebounceMs: v })} />
+                <Divider />
+                <SliderRow label="Selection release minimum" hint="Minimum hold before release-to-move can trigger" value={Number(controlConfig?.eyes?.selectionReleaseMin ?? 80)} display={`${Math.round(Number(controlConfig?.eyes?.selectionReleaseMin ?? 80))} ms`} min={0} max={500} step={10} accent="#22c55e" onChange={v => updateEyesConfig({ selectionReleaseMin: v })} />
+              </section>
+            )}
+          </>
+        )}
+
+        {activeTab === "head" && (
+          <>
+            <SectionHeader title="Basic" subtitle="Core interaction settings" onReset={() => updateHeadConfig({ selectionMethod: "RIGHT", selectionDwell: 650, commandDelay: 120 })} />
             <section style={s.section}>
-              <div style={s.sectionHeader}>
-                <span style={s.sectionIcon}>⚡</span>
-                <div>
-                  <p style={s.sectionTitle}>Quick Presets</p>
-                  <p style={s.sectionSub}>Recommended starting points</p>
-                </div>
+              <div style={s.selectRow}>
+                <ControlLabel text="Selection method" help="Which direction confirms/selects after dwell." />
+                <select value={headSelectionMethod} onChange={(e) => updateHeadConfig({ selectionMethod: String(e.target.value).toUpperCase() })} style={s.selectInput}>
+                  <option value="right">RIGHT (hold right)</option>
+                  <option value="left">LEFT (hold left)</option>
+                  <option value="up">UP (hold up)</option>
+                  <option value="down">DOWN (hold down)</option>
+                  <option value="center">CENTER (hold center)</option>
+                </select>
               </div>
+              <Divider />
+              <SliderRow label="Selection dwell" hint="How long to hold selection direction" value={headSelectionDwell} display={`${Math.round(headSelectionDwell)} ms`} min={500} max={3000} step={100} accent="#38bdf8" onChange={v => updateHeadConfig({ selectionDwell: v })} />
+              <Divider />
+              <SliderRow label="Command delay" hint="Time between commands" value={headCommandDelay} display={`${Math.round(headCommandDelay)} ms`} min={100} max={1200} step={50} accent="#38bdf8" onChange={v => updateHeadConfig({ commandDelay: v })} />
+            </section>
+
+            <SectionHeader title="Tuning" subtitle="Head signal processing" onReset={() => updateHeadConfig({ sensitivity: 0.35, smoothing: 0.5, deadzone: 0.1 })} />
+            <section style={s.section}>
+              <SliderRow label="Sensitivity (threshold)" hint="Lower = triggers on smaller tilts" value={headSensitivity} display={headSensitivity.toFixed(2)} min={0.1} max={1.0} step={0.01} accent="#38bdf8" onChange={v => updateHeadConfig({ sensitivity: v })} />
+              <Divider />
+              <SliderRow label="Smoothing (alpha)" hint="Higher = faster reaction" value={headSmoothing} display={headSmoothing.toFixed(2)} min={0.1} max={1.0} step={0.05} accent="#38bdf8" onChange={v => updateHeadConfig({ smoothing: v })} />
+              <Divider />
+              <SliderRow label="Deadzone" hint="Ignore micro-movements" value={headDeadzone} display={headDeadzone.toFixed(2)} min={0.01} max={0.5} step={0.01} accent="#38bdf8" onChange={v => updateHeadConfig({ deadzone: v })} />
+              <Divider />
               <div style={s.presets}>
                 {PRESETS.map(p => (
-                  <button key={p.label} style={s.presetBtn}
-                    onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.07)"}
-                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-                    onClick={() => {
-                      setHoldDuration(p.hold);
-                      updateSensorSettings({ alpha: p.alpha, threshold: p.threshold, deadzone: p.deadzone });
-                    }}>
+                  <button key={p.label} style={s.presetBtn} onClick={() => updateHeadConfig({ smoothing: p.alpha, sensitivity: p.threshold, deadzone: p.deadzone })}>
                     <span style={s.presetIcon}>{p.icon}</span>
                     <span style={s.presetLabel}>{p.label}</span>
                     <span style={s.presetDesc}>{p.desc}</span>
@@ -313,189 +283,42 @@ export default function Settings() {
                 ))}
               </div>
             </section>
+
+            <SectionHeader title="Advanced" subtitle="Fine control" collapsible open={advancedOpen.head} onToggle={() => setAdvancedOpen(p => ({ ...p, head: !p.head }))} onReset={() => updateHeadConfig({ debounceMs: 200, minStableFrames: 2, directionDebounceMs: 80, selectionReleaseMin: 80 })} />
+            {advancedOpen.head && (
+              <section style={s.section}>
+                <SliderRow label="Reaction delay" hint="Direction must stay stable before it counts" value={Number(controlConfig?.head?.debounceMs ?? 200)} display={`${Math.round(Number(controlConfig?.head?.debounceMs ?? 200))} ms`} min={0} max={800} step={20} accent="#38bdf8" onChange={v => updateHeadConfig({ debounceMs: v })} />
+                <Divider />
+                <SliderRow label="Stability frames" hint="How many stable frames are required" value={Number(controlConfig?.head?.minStableFrames ?? 2)} display={`${Math.round(Number(controlConfig?.head?.minStableFrames ?? 2))}`} min={1} max={10} step={1} accent="#38bdf8" onChange={v => updateHeadConfig({ minStableFrames: v })} />
+                <Divider />
+                <SliderRow label="Direction debounce" hint="Delay before direction switch is accepted" value={Number(controlConfig?.head?.directionDebounceMs ?? 80)} display={`${Math.round(Number(controlConfig?.head?.directionDebounceMs ?? 80))} ms`} min={0} max={300} step={10} accent="#38bdf8" onChange={v => updateHeadConfig({ directionDebounceMs: v })} />
+                <Divider />
+                <SliderRow label="Selection release minimum" hint="Minimum hold before release-to-move can trigger" value={Number(controlConfig?.head?.selectionReleaseMin ?? 80)} display={`${Math.round(Number(controlConfig?.head?.selectionReleaseMin ?? 80))} ms`} min={0} max={500} step={10} accent="#38bdf8" onChange={v => updateHeadConfig({ selectionReleaseMin: v })} />
+              </section>
+            )}
           </>
         )}
 
-        {/* ── Eyes mode (MediaPipe, webcam) ── */}
-        {mode === "eyes" && (
+        {activeTab === "cnn" && (
           <>
+            <SectionHeader title="Status" subtitle="CNN stream and current label" />
             <section style={s.section}>
-              <div style={s.sectionHeader}>
-                <span style={s.sectionIcon}>👁️</span>
-                <div>
-                  <p style={s.sectionTitle}>Eye Tracking</p>
-                  <p style={s.sectionSub}>
-                    {eyeCentered ? "Centred and tracking" : eyeReady ? "Centering…" : "Initialising camera…"}
-                  </p>
-                </div>
-              </div>
-
-              <SliderRow label="Y-axis bias" hint="If stuck on DOWN drag left · if stuck on UP drag right"
-                value={localYBias} display={localYBias.toFixed(2)}
-                help="Offsets vertical gaze center to correct camera angle or posture."
-                min={-2.0} max={2.0} step={0.05} accent="#22c55e"
-                onChange={v => { setLocalYBias(v); setYBias(v); }} />
-
-              <Divider />
-
-              <SliderRow label="Center stability buffer" hint="Higher = smoother center, lower = more responsive"
-                value={localCenterBuffer} display={localCenterBuffer.toFixed(2)}
-                help="Expands neutral zone near center to reduce jitter and accidental moves."
-                min={0.0} max={1.5} step={0.01} accent="#22c55e"
-                onChange={v => { setLocalCenterBuffer(v); setCenterBuffer(v); }} />
-
-              <Divider />
-
-              <SliderRow label="Command delay" hint="Milliseconds between commands (higher = slower navigation)"
-                value={localCommandDelay} display={`${Math.round(localCommandDelay)} ms`}
-                help="Minimum time between repeated commands. Increase for easier control."
-                min={100} max={1200} step={50} accent="#22c55e"
-                onChange={v => { setLocalCommandDelay(v); setCommandDelay(v); }} />
-
-              <Divider />
-
-              <div style={s.toggleRow}>
-                <span style={s.selectLabelRow}>
-                  <span style={s.selectLabel}>Hold-to-repeat navigation</span>
-                  <HelpIcon text="When enabled, keeping gaze on a navigation direction repeats jumps with fixed delay." />
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setEyeHoldRepeatEnabled(!eyeHoldRepeatEnabled)}
-                  style={{
-                    ...s.toggleBtn,
-                    ...(eyeHoldRepeatEnabled ? s.toggleBtnOn : s.toggleBtnOff),
-                  }}
-                >
-                  {eyeHoldRepeatEnabled ? "ON" : "OFF"}
-                </button>
-              </div>
-
-              {eyeHoldRepeatEnabled && (
-                <>
-                  <SliderRow label="Repeat delay" hint="Delay between repeated jumps while holding gaze"
-                    value={eyeHoldRepeatDelay} display={`${Math.round(eyeHoldRepeatDelay)} ms`}
-                    help="Lower values move faster on long holds."
-                    min={60} max={1200} step={20} accent="#22c55e"
-                    onChange={setEyeHoldRepeatDelay} />
-                </>
+              {cnnReady ? (
+                <img src="http://localhost:8000/camera/stream" alt="Pi camera" style={{ width: "100%", borderRadius: 12, border: "1px solid rgba(255,255,255,0.08)", background: "#000", aspectRatio: "4/3", objectFit: "cover" }} />
+              ) : (
+                <div style={s.metaText}>Waiting for nn_server.py on :5001…</div>
               )}
-
-              <Divider />
-
-              <button style={s.recenterBtn}
-                onMouseEnter={e => e.currentTarget.style.background = "rgba(34,197,94,0.12)"}
-                onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-                onClick={recenterEyes}>
-                Re-centre eye tracking
-              </button>
-
-              <p style={{ fontSize: 12, color: "rgba(255,255,255,0.22)", margin: 0 }}>
-                Hold gaze RIGHT for ~1.5 s to confirm · UP/DOWN navigate · LEFT goes back
-              </p>
-            </section>
-
-            <section style={s.section}>
-              <div style={s.sectionHeader}>
-                <span style={s.sectionIcon}>⚙️</span>
-                <div>
-                  <p style={s.sectionTitle}>Selection Method</p>
-                  <p style={s.sectionSub}>How to confirm and select items</p>
-                </div>
-              </div>
-              <div style={s.selectRow}>
-                <ControlLabel text="Select using" help="Choose which gaze direction acts as confirm/select after dwell." />
-                <select value={selectionMethod} onChange={e => setSelectionMethod(e.target.value)}
-                  style={s.selectInput}>
-                  <option value="right">RIGHT (hold right)</option>
-                  <option value="left">LEFT (hold left)</option>
-                  <option value="up">UP (hold up)</option>
-                  <option value="down">DOWN (hold down)</option>
-                  <option value="center">CENTER (hold center)</option>
-                </select>
-              </div>
-
-              <Divider />
-
-              <SliderRow label="Selection dwell time" hint="How long to hold the gaze direction to select"
-                value={selectionDwell} display={`${selectionDwell} ms`}
-                help="How long to keep looking at selection direction before confirm fires."
-                min={500} max={3000} step={100} accent="#22c55e"
-                onChange={v => setSelectionDwell(v)} />
-
-              <p style={{ fontSize: 12, color: "rgba(255,255,255,0.22)", margin: "8px 0 0 0" }}>
-                Hold your gaze in the selected direction for the specified duration to confirm
-              </p>
-            </section>
-          </>
-        )}
-
-        {/* ── CNN mode (Pi camera + PyTorch model) ── */}
-        {mode === "cnn" && (
-          <>
-            <section style={s.section}>
-              <div style={s.sectionHeader}>
-                <span style={s.sectionIcon}>🧠</span>
-                <div>
-                  <p style={s.sectionTitle}>CNN Eye Tracking</p>
-                  <p style={s.sectionSub}>
-                    {cnnReady ? "Connected to nn_server.py" : "Waiting for nn_server.py on :5001…"}
-                  </p>
-                </div>
-              </div>
-
-              {/* camera preview */}
-              <img
-                src="http://localhost:8000/camera/stream"
-                alt="Pi camera"
-                style={{
-                  width: "100%", borderRadius: 12, border: "1px solid rgba(255,255,255,0.08)",
-                  background: "#000", aspectRatio: "4/3", objectFit: "cover",
-                  display: cnnReady ? "block" : "none",
-                }}
-              />
-              {!cnnReady && (
-                <div style={{ textAlign: "center", color: "rgba(255,255,255,0.2)", fontSize: 13, padding: "20px 0" }}>
-                  Camera preview will appear once connected
-                </div>
-              )}
-
-              {/* live gaze badge */}
               <div style={s.gazeRow}>
                 <span style={s.gazeLabel}>Current gaze</span>
-                <span style={{
-                  ...s.gazeBadge,
-                  background:  cnnReady ? "rgba(34,197,94,0.12)" : "rgba(255,255,255,0.04)",
-                  color:       cnnReady ? "#86efac"              : "rgba(255,255,255,0.25)",
-                  borderColor: cnnReady ? "rgba(34,197,94,0.3)"  : "rgba(255,255,255,0.08)",
-                }}>
-                  {cnnReady ? gazeLabel : "—"}
-                </span>
+                <span style={{ ...s.gazeBadge, background: cnnReady ? "rgba(34,197,94,0.12)" : "rgba(255,255,255,0.04)", color: cnnReady ? "#86efac" : "rgba(255,255,255,0.25)", borderColor: cnnReady ? "rgba(34,197,94,0.3)" : "rgba(255,255,255,0.08)" }}>{cnnReady ? gazeLabel : "—"}</span>
               </div>
-
             </section>
 
+            <SectionHeader title="Basic" subtitle="Core interaction settings" onReset={() => updateCnnConfig({ selectionMethod: "DOWN", selectionDwell: 650, commandDelay: 120 })} />
             <section style={s.section}>
-              <div style={s.sectionHeader}>
-                <span style={s.sectionIcon}>⚙️</span>
-                <div>
-                  <p style={s.sectionTitle}>CNN Selection Method</p>
-                  <p style={s.sectionSub}>How to confirm and select items</p>
-                </div>
-              </div>
               <div style={s.selectRow}>
-                <ControlLabel text="Select using" help="Choose which CNN direction acts as confirm/select after dwell." />
-                <select value={selectionMethod} onChange={e => setSelectionMethod(e.target.value)}
-                  style={{
-                    ...s.selectInput,
-                    borderColor: selectionMethod === "center" ? "rgba(167,139,250,0.7)" : "rgba(34,197,94,0.4)",
-                    boxShadow: selectionMethod === "center"
-                      ? "0 0 0 1px rgba(167,139,250,0.35), 0 6px 16px rgba(167,139,250,0.2)"
-                      : s.selectInput.boxShadow,
-                    background: selectionMethod === "center"
-                      ? "linear-gradient(135deg, rgba(167,139,250,0.18) 0%, rgba(167,139,250,0.08) 100%)"
-                      : s.selectInput.background,
-                  }}>
+                <ControlLabel text="Selection method" help="Which direction confirms/selects after dwell." />
+                <select value={cnnSelectionMethod} onChange={e => updateCnnConfig({ selectionMethod: String(e.target.value).toUpperCase() })} style={s.selectInput}>
                   <option value="right">RIGHT (hold right)</option>
                   <option value="left">LEFT (hold left)</option>
                   <option value="up">UP (hold up)</option>
@@ -503,106 +326,41 @@ export default function Settings() {
                   <option value="center">CENTER (hold center)</option>
                 </select>
               </div>
-
-              {selectionMethod === "center" && (
-                <>
-                  <Divider />
-                  <div style={s.centerGroupBox}>
-                    <div style={s.centerGroupHeader}>CENTER selection tuning</div>
-                    <SliderRow
-                      label="Center min confidence"
-                      hint="Required confidence for CENTER hold to keep counting"
-                      help="If confidence drops below this, CENTER selection timer resets immediately."
-                      value={centerSelectMinConfidence}
-                      display={centerSelectMinConfidence.toFixed(2)}
-                      min={0.55}
-                      max={0.99}
-                      step={0.01}
-                      accent="#a78bfa"
-                      onChange={setCenterSelectMinConfidence}
-                    />
-
-                    <Divider />
-                    <SliderRow
-                      label="Center noise delta"
-                      hint="Allowed confidence jitter (max-min) while holding CENTER"
-                      help="Lower values require steadier confidence; higher values are more tolerant to noise."
-                      value={centerSelectNoiseDelta}
-                      display={centerSelectNoiseDelta.toFixed(3)}
-                      min={0.01}
-                      max={0.2}
-                      step={0.005}
-                      accent="#a78bfa"
-                      onChange={setCenterSelectNoiseDelta}
-                    />
-                  </div>
-                </>
-              )}
-
               <Divider />
-              <SliderRow label="Selection dwell time" hint="How long to hold the gaze direction to select"
-                value={selectionDwell} display={`${selectionDwell} ms`}
-                help="How long to keep CNN gaze on selection direction before confirm fires."
-                min={500} max={3000} step={100} accent="#22c55e"
-                onChange={v => setSelectionDwell(v)} />
-
+              <SliderRow label="Selection dwell" hint="How long to hold the selected direction" value={cnnSelectionDwell} display={`${Math.round(cnnSelectionDwell)} ms`} min={500} max={3000} step={100} accent="#22c55e" onChange={v => updateCnnConfig({ selectionDwell: v })} />
               <Divider />
-
-              <SliderRow label="Command delay" hint="Milliseconds between commands (higher = slower navigation)"
-                value={localCommandDelay} display={`${Math.round(localCommandDelay)} ms`}
-                help="Minimum time between repeated CNN navigation commands."
-                min={100} max={1200} step={50} accent="#22c55e"
-                onChange={v => { setLocalCommandDelay(v); setCommandDelay(v); }} />
-
-              <Divider />
-
-              <div style={s.toggleRow}>
-                <span style={s.selectLabelRow}>
-                  <span style={s.selectLabel}>Fast hold navigation</span>
-                  <HelpIcon text="When enabled, keeping CNN gaze on a navigation direction repeats jumps with fixed delay." />
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setEyeHoldRepeatEnabled(!eyeHoldRepeatEnabled)}
-                  style={{
-                    ...s.toggleBtn,
-                    ...(eyeHoldRepeatEnabled ? s.toggleBtnOn : s.toggleBtnOff),
-                  }}
-                >
-                  {eyeHoldRepeatEnabled ? "ON" : "OFF"}
-                </button>
-              </div>
-
-              {eyeHoldRepeatEnabled && (
-                <SliderRow label="Fast repeat delay" hint="Delay between repeated CNN jumps while holding gaze"
-                  value={eyeHoldRepeatDelay} display={`${Math.round(eyeHoldRepeatDelay)} ms`}
-                  help="Lower values move faster on long holds in Keyboard and other pages."
-                  min={60} max={1200} step={20} accent="#22c55e"
-                  onChange={setEyeHoldRepeatDelay} />
-              )}
-
-              <p style={{ fontSize: 12, color: "rgba(255,255,255,0.22)", margin: "8px 0 0 0" }}>
-                CNN smoothing comes mainly from backend stabilization; use command delay and selection dwell for feel.
-              </p>
+              <SliderRow label="Command delay" hint="Time between commands" value={cnnCommandDelay} display={`${Math.round(cnnCommandDelay)} ms`} min={100} max={1200} step={50} accent="#22c55e" onChange={v => updateCnnConfig({ commandDelay: v })} />
             </section>
 
+            <SectionHeader title="Tuning" subtitle="Prediction confidence and stability" onReset={() => { updateCnnConfig({ cnnMinConfidence: 0.45, stableFrames: 4 }); setCnnAntiJitterLevel(20); }} />
             <section style={s.section}>
-              <div style={s.sectionHeader}>
-                <span style={s.sectionIcon}>🧩</span>
-                <div>
-                  <p style={s.sectionTitle}>Backend Anti-jitter</p>
-                  <p style={s.sectionSub}>One control for smoothness vs responsiveness</p>
-                </div>
+              <SliderRow label="Min confidence" hint="Predictions below this are ignored" value={cnnMinConfidence} display={cnnMinConfidence.toFixed(2)} min={0.2} max={0.99} step={0.01} accent="#22c55e" onChange={v => updateCnnConfig({ cnnMinConfidence: v })} />
+              <Divider />
+              <SliderRow label="Stable frames" hint="How many matching frames are preferred before acting" value={cnnStableFrames} display={`${Math.round(cnnStableFrames)}`} min={1} max={10} step={1} accent="#22c55e" onChange={v => updateCnnConfig({ stableFrames: Math.round(v) })} />
+              <Divider />
+              <SliderRow label="Anti-jitter strength" hint="Left = faster reaction · Right = smoother output" value={cnnAntiJitterLevel} display={`${Math.round(cnnAntiJitterLevel)} · ${antiJitterLabel(cnnAntiJitterLevel)}`} min={0} max={50} step={1} accent="#22c55e" onChange={v => setCnnAntiJitterLevel(v)} />
+              <Divider />
+              <div style={s.toggleRow}>
+                <span style={s.selectLabelRow}><span style={s.selectLabel}>Fast hold navigation</span><HelpIcon text="Repeat movement while CNN gaze is held in one direction." /></span>
+                <button type="button" onClick={() => updateCnnConfig({ repeatEnabled: !cnnRepeatEnabled })} style={{ ...s.toggleBtn, ...(cnnRepeatEnabled ? s.toggleBtnOn : s.toggleBtnOff) }}>{cnnRepeatEnabled ? "ON" : "OFF"}</button>
               </div>
-
-              <SliderRow label="Anti-jitter strength" hint="Left = faster reaction · Right = smoother output"
-                value={cnnAntiJitterLevel} display={`${Math.round(cnnAntiJitterLevel)} · ${antiJitterLabel(cnnAntiJitterLevel)}`}
-                help="Unified control for CNN smoothing. Increase if direction flickers. Decrease if it feels delayed."
-                min={0} max={50} step={1} accent="#22c55e"
-                onChange={v => setCnnAntiJitterLevel(v)} />
-
-              <p style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", margin: "8px 0 0 0" }}>{cnnSettingsStatus || "Auto-saves"}</p>
+              {cnnRepeatEnabled && <SliderRow label="Fast repeat delay" hint="Delay between repeated jumps" value={cnnRepeatDelay} display={`${Math.round(cnnRepeatDelay)} ms`} min={60} max={1200} step={20} accent="#22c55e" onChange={v => updateCnnConfig({ repeatDelay: v })} />}
+              {cnnSelectionMethod === "center" && <><Divider /><SliderRow label="Center min confidence" hint="Required confidence for CENTER hold" value={centerSelectMinConfidence} display={centerSelectMinConfidence.toFixed(2)} min={0.55} max={0.99} step={0.01} accent="#a78bfa" onChange={v => updateCnnConfig({ centerSelectMinConfidence: v })} /></>}
+              <p style={s.metaText}>{cnnSettingsStatus || "Auto-saves backend anti-jitter"}</p>
             </section>
+
+            <SectionHeader title="Advanced" subtitle="Fine control" collapsible open={advancedOpen.cnn} onToggle={() => setAdvancedOpen(p => ({ ...p, cnn: !p.cnn }))} onReset={() => updateCnnConfig({ debounceMs: 200, minStableFrames: 2, directionDebounceMs: 80, selectionReleaseMin: 80 })} />
+            {advancedOpen.cnn && (
+              <section style={s.section}>
+                <SliderRow label="Reaction delay" hint="Direction must stay stable before it counts" value={Number(controlConfig?.cnn?.debounceMs ?? 200)} display={`${Math.round(Number(controlConfig?.cnn?.debounceMs ?? 200))} ms`} min={0} max={800} step={20} accent="#22c55e" onChange={v => updateCnnConfig({ debounceMs: v })} />
+                <Divider />
+                <SliderRow label="Stability frames" hint="How many stable frames are required" value={Number(controlConfig?.cnn?.minStableFrames ?? 2)} display={`${Math.round(Number(controlConfig?.cnn?.minStableFrames ?? 2))}`} min={1} max={10} step={1} accent="#22c55e" onChange={v => updateCnnConfig({ minStableFrames: v })} />
+                <Divider />
+                <SliderRow label="Direction debounce" hint="Delay before direction switch is accepted" value={Number(controlConfig?.cnn?.directionDebounceMs ?? 80)} display={`${Math.round(Number(controlConfig?.cnn?.directionDebounceMs ?? 80))} ms`} min={0} max={300} step={10} accent="#22c55e" onChange={v => updateCnnConfig({ directionDebounceMs: v })} />
+                <Divider />
+                <SliderRow label="Selection release minimum" hint="Minimum hold before release-to-move can trigger" value={Number(controlConfig?.cnn?.selectionReleaseMin ?? 80)} display={`${Math.round(Number(controlConfig?.cnn?.selectionReleaseMin ?? 80))} ms`} min={0} max={500} step={10} accent="#22c55e" onChange={v => updateCnnConfig({ selectionReleaseMin: v })} />
+              </section>
+            )}
           </>
         )}
       </div>
@@ -616,10 +374,29 @@ export default function Settings() {
   );
 }
 
+function SectionHeader({ title, subtitle, onReset, collapsible = false, open = false, onToggle }) {
+  return (
+    <section style={s.section}>
+      <div style={s.groupHeader}>
+        {collapsible ? (
+          <button type="button" style={s.advancedToggle} onClick={onToggle}>
+            <span>{open ? "▾" : "▸"}</span>
+            <span style={s.sectionTitle}>{title}</span>
+          </button>
+        ) : (
+          <p style={s.sectionTitle}>{title}</p>
+        )}
+        {onReset && <button type="button" style={s.resetBtn} onClick={onReset}>Reset to defaults</button>}
+      </div>
+      <p style={s.sectionSub}>{subtitle}</p>
+    </section>
+  );
+}
+
 const PRESETS = [
-  { label: "Careful", icon: "🐢", desc: "Slow & deliberate", hold: 700, alpha: 0.4, threshold: 2.0, deadzone: 1.2 },
-  { label: "Balanced", icon: "⚖️", desc: "Recommended", hold: 500, alpha: 0.5, threshold: 1.5, deadzone: 1.0 },
-  { label: "Responsive", icon: "⚡", desc: "Fast", hold: 300, alpha: 0.7, threshold: 1.0, deadzone: 0.6 },
+  { label: "Careful", icon: "🐢", desc: "Slow & deliberate", alpha: 0.4, threshold: 0.55, deadzone: 0.18 },
+  { label: "Balanced", icon: "⚖️", desc: "Recommended", alpha: 0.5, threshold: 0.35, deadzone: 0.1 },
+  { label: "Responsive", icon: "⚡", desc: "Fast", alpha: 0.7, threshold: 0.25, deadzone: 0.08 },
 ];
 
 function SliderRow({ label, hint, help, value, display, min, max, step, accent, onChange }) {
@@ -692,7 +469,7 @@ const s = {
     fontSize: "18px", fontWeight: "300", color: "rgba(255,255,255,0.5)",
     letterSpacing: "0.1em", textTransform: "uppercase",
   },
-  content: { display: "flex", flexDirection: "column", gap: "16px", maxWidth: 600, width: "100%", margin: "0 auto" },
+  content: { display: "flex", flexDirection: "column", gap: "16px", maxWidth: 680, width: "100%", margin: "0 auto" },
   section: {
     background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)",
     borderRadius: "18px", padding: "24px 24px 20px", display: "flex", flexDirection: "column", gap: "20px",
@@ -704,6 +481,51 @@ const s = {
     letterSpacing: "0.06em", margin: 0, textTransform: "uppercase",
   },
   sectionSub: { fontSize: "12px", color: "rgba(255,255,255,0.25)", margin: "4px 0 0" },
+  tabsRow: { display: "flex", gap: 10, flexWrap: "wrap" },
+  tabBtn: {
+    border: "1px solid rgba(255,255,255,0.14)",
+    background: "rgba(255,255,255,0.03)",
+    color: "rgba(255,255,255,0.7)",
+    borderRadius: 12,
+    padding: "10px 18px",
+    fontSize: 13,
+    fontWeight: 600,
+    letterSpacing: "0.04em",
+    cursor: "pointer",
+  },
+  tabBtnActive: {
+    borderColor: "rgba(34,197,94,0.5)",
+    color: "#86efac",
+    background: "rgba(34,197,94,0.12)",
+  },
+  groupHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  resetBtn: {
+    border: "1px solid rgba(255,255,255,0.18)",
+    background: "transparent",
+    color: "rgba(255,255,255,0.7)",
+    borderRadius: 10,
+    padding: "8px 12px",
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: "pointer",
+  },
+  advancedToggle: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
+    border: "none",
+    background: "transparent",
+    color: "rgba(255,255,255,0.75)",
+    cursor: "pointer",
+    fontSize: 14,
+    fontWeight: 600,
+    padding: 0,
+  },
   sliderRow: { display: "flex", flexDirection: "column", gap: "6px" },
   sliderMeta: { display: "flex", justifyContent: "space-between", alignItems: "baseline" },
   sliderLabelRow: { display: "flex", alignItems: "center", gap: 8 },
@@ -805,6 +627,7 @@ const s = {
     textTransform: "uppercase",
     color: "#c4b5fd",
   },
+  metaText: { fontSize: 12, color: "rgba(255,255,255,0.35)", margin: 0 },
   legend: {
     position: "fixed", bottom: 28, left: 0, right: 0, textAlign: "center",
     fontSize: 12, color: "rgba(255,255,255,0.18)", letterSpacing: "0.06em",

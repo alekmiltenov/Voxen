@@ -125,6 +125,8 @@ export function GazeIndicator({ debug, compact = false, embedded = false }) {
         <span>Select: {selectionMethod}</span>
         <span>{statusText}</span>
       </div>
+
+      
     </div>
   );
 }
