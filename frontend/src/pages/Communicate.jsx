@@ -31,7 +31,10 @@ export default function Communicate() {
   const loadStarters = useCallback(() => {
     apiGet("/vocab/starters?limit=12")
       .then((d) => {
-        const learned = d.starters.map((s) => s.word).filter(Boolean);
+        const learned = d.starters.map((s) => {
+          const word = String(s.word).trim();
+          return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+        }).filter(Boolean);
         const merged = [];
         const seen = new Set();
 
