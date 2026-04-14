@@ -445,10 +445,6 @@ export default function Keyboard() {
 
       <div style={s.page}>
       <div style={s.topBar}>
-        <button style={s.pill}
-          onClick={() => void persistAndReturn()}>
-          ← Back
-        </button>
         <div style={s.titleCluster}>
           <div style={s.titleSideSlot}>
             {enabled && indicatorDebug && (
@@ -561,7 +557,7 @@ export default function Keyboard() {
             style={{
               ...s.key,
               ...s.bsKey,
-              flex: 0.7,
+              flex: 1,
               ...((enabled && !scanEnabled && selRow === 3 && selCol === 0)
                 || (!enabled && hoveredKey === "delete")
                 || (enabled && scanEnabled && scanPhase === "item" && scanRow === 3 && scanCol === 0)
@@ -575,7 +571,7 @@ export default function Keyboard() {
           </button>
           <button style={{
             ...s.key,
-            flex: 1,
+            flex: 2,
             ...((enabled && !scanEnabled && selRow === 3 && selCol === 1)
               || (!enabled && hoveredKey === "space")
               || (enabled && scanEnabled && scanPhase === "item" && scanRow === 3 && scanCol === 1)
@@ -591,16 +587,17 @@ export default function Keyboard() {
             style={{
               ...s.key,
               ...s.doneKey,
-              flex: 0.7,
+              flex: 1,
               display: "inline-flex",
               alignItems: "center",
               justifyContent: "center",
               gap: "8px",
-              ...((!enabled && hoveredKey === "done")
-                ? s.doneHoverKey
-                : ((enabled && !scanEnabled && selRow === 3 && selCol === 2)
-                  || (enabled && scanEnabled && scanPhase === "item" && scanRow === 3 && scanCol === 2)
-                  ? s.doneSelectedKey
+              ...((enabled && !scanEnabled && selRow === 3 && selCol === 2)
+                || (enabled && scanEnabled && scanPhase === "item" && scanRow === 3 && scanCol === 2)
+                || (!enabled && hoveredKey === "done")
+                ? s.doneSelectedKey
+                : (hoveredKey === "done"
+                  ? s.doneHoverKey
                   : s.unselectedDoneKey)),
             }}
             onMouseEnter={() => setHoveredKey("done")}
@@ -633,6 +630,23 @@ export default function Keyboard() {
               {eyeHoldRepeatEnabled ? "Repeat: ON" : "Repeat: OFF"}
             </button>
           )}
+          <button style={{
+            ...s.key,
+            ...s.backKeyStyle,
+            flex: 0.8,
+            ...((enabled && !scanEnabled && selRow === 3 && selCol === 4)
+              || (enabled && scanEnabled && scanPhase === "item" && scanRow === 3 && selCol === 4)
+              || (!enabled && hoveredKey === "back")
+              ? s.selectedKey
+              : (hoveredKey === "back"
+                ? s.selectedKey
+                : s.unselectedKey)),
+          }}
+            onMouseEnter={() => setHoveredKey("back")}
+            onMouseLeave={() => setHoveredKey(null)}
+            onClick={() => { setSelection(3, 4); persistAndReturn(); }}>
+            ← Back
+          </button>
         </div>
       </div>
       </div>
@@ -729,6 +743,24 @@ const s = {
     border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.35)",
     fontSize: "13px", cursor: "pointer",
     zIndex: 2,
+  },
+  backKeyStyle: {
+    background: "rgba(255,255,255,0.03)",
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: "rgba(255,255,255,0.08)",
+    borderRadius: "10px",
+    color: "rgba(255,255,255,0.85)",
+    fontSize: "17px",
+    fontWeight: 400,
+    padding: "0",
+    cursor: "pointer",
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "10px",
+    transition: "border-color 0.1s, background 0.1s, color 0.1s",
   },
   label: {
     fontSize: "14px", color: "rgba(255,255,255,0.35)",
@@ -828,7 +860,7 @@ const s = {
     transform: "scale(1.01)",
   },
   actionRow: {
-    width: "96%",
+    width: "90%",
     alignSelf: "center",
   },
   letterRow: {
@@ -861,28 +893,28 @@ const s = {
     transform: "none",
   },
   doneKey: {
-    background: "rgba(255,255,255,0.11)", border: "1px solid rgba(255,255,255,0.22)", color: "rgba(255,255,255,1)",
-    fontWeight: "600", transition: "background 0.1s",
+    background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.85)",
+    fontWeight: "400", transition: "background 0.1s",
   },
   unselectedDoneKey: {
-    borderColor: "rgba(255,255,255,0.22)",
-    background: "rgba(255,255,255,0.11)",
-    color: "rgba(255,255,255,1)",
-    fontWeight: "600",
+    borderColor: "rgba(255,255,255,0.15)",
+    background: "rgba(255,255,255,0.10)",
+    color: "rgba(255,255,255,0.85)",
+    fontWeight: "400",
     boxShadow: "none",
     transform: "none",
   },
   doneSelectedKey: {
-    borderColor: "rgba(255,255,255,0.34)",
-    background: "rgba(255,255,255,0.18)",
-    color: "rgba(255,255,255,1)",
-    fontWeight: "700",
+    borderColor: "rgba(255,255,255,0.25)",
+    background: "rgba(255,255,255,0.16)",
+    color: "rgba(255,255,255,0.85)",
+    fontWeight: "400",
   },
   doneHoverKey: {
-    borderColor: "rgba(255,255,255,0.42)",
-    background: "rgba(255,255,255,0.24)",
-    color: "rgba(255,255,255,1)",
-    fontWeight: "700",
+    borderColor: "rgba(255,255,255,0.25)",
+    background: "rgba(255,255,255,0.16)",
+    color: "rgba(255,255,255,0.85)",
+    fontWeight: "400",
   },
   toggleKeyOn: {
     background: "rgba(255,255,255,0.03)",

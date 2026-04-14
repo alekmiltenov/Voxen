@@ -171,7 +171,27 @@ export default function Actions() {
   return (
     <div style={s.page}>
       <div style={s.header}>
-        <button style={s.backBtn} onClick={() => navigate("/")}>← Back</button>
+        <button
+          style={{
+            ...s.backBtn,
+            borderColor: "#1e1e1e",
+            background: "#0f0f0f",
+            color: "rgb(224 224 224)",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = "#505050";
+            e.currentTarget.style.background = "#222222";
+            e.currentTarget.style.color = "rgb(224 224 224)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = "#1e1e1e";
+            e.currentTarget.style.background = "#0f0f0f";
+            e.currentTarget.style.color = "rgb(224 224 224)";
+          }}
+          onClick={() => navigate("/")}
+        >
+          ← Back
+        </button>
         <span style={s.title}>Actions</span>
       </div>
 
@@ -248,10 +268,14 @@ const s = {
     top: "50%",
     left: 0,
     transform: "translateY(-50%)",
-    padding: "8px 18px", borderRadius: "20px", background: "transparent",
-    border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.35)",
-    fontSize: "13px", cursor: "pointer",
+    padding: "8px 18px",
+    borderRadius: "10px",
+    border: "1px solid",
+    fontSize: "17px",
+    fontWeight: 400,
+    cursor: "pointer",
     zIndex: 2,
+    transition: "background 0.15s, border-color 0.15s, color 0.15s",
   },
   title: {
     fontSize: "18px", fontWeight: "300", color: "rgba(255,255,255,0.5)",

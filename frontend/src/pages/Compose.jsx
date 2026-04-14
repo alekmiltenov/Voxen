@@ -239,9 +239,10 @@ export default function Compose() {
     items.push({ id: "action-speak", run: speakText });
     items.push({ id: "action-keyboard", run: openKeyboard });
     items.push({ id: "action-delete", run: deleteBackspace });
+    items.push({ id: "action-back", run: () => navigate("/communicate") });
 
     return items;
-  }, [addPhrase, deleteBackspace, openKeyboard, speakText, suggestions]);
+  }, [addPhrase, deleteBackspace, openKeyboard, speakText, suggestions, navigate]);
 
   const indexById = useMemo(() => {
     const map = {};
@@ -259,7 +260,7 @@ export default function Compose() {
       rows.push(suggestionIds.slice(i, i + 4));
     }
 
-    rows.push(["action-speak", "action-keyboard", "action-delete"]);
+    rows.push(["action-speak", "action-keyboard", "action-delete", "action-back"]);
     return rows;
   }, [suggestions]);
 
@@ -363,7 +364,6 @@ export default function Compose() {
 
       <div style={s.page}>
         <div style={s.topBar}>
-          <button style={s.backBtn} onClick={() => navigate("/communicate")}>← Back</button>
           <span style={s.title}>COMPOSE</span>
         </div>
 
@@ -463,6 +463,18 @@ export default function Compose() {
           >
             <span style={s.deleteEmoji} aria-hidden="true">⌫</span>
           </button>
+
+          <button
+            style={{
+              ...s.backBtn,
+              ...((enabled && indexById["action-back"] === selIdx) || hoveredId === "action-back" ? s.actionBtnActive : {}),
+            }}
+            onMouseEnter={() => setHoveredId("action-back")}
+            onMouseLeave={() => setHoveredId(null)}
+            onClick={() => navigate("/communicate")}
+          >
+            ← Back
+          </button>
         </div>
       </div>
     </>
@@ -490,18 +502,23 @@ const s = {
     flexShrink: 0,
   },
   backBtn: {
-    position: "absolute",
-    left: 0,
-    padding: "8px 18px",
-    borderRadius: "20px",
+    background: "rgba(255,255,255,0.03)",
     borderWidth: "1px",
     borderStyle: "solid",
-    borderColor: "rgba(255,255,255,0.1)",
-    color: "rgba(255,255,255,0.35)",
-    fontSize: "13px",
-    background: "transparent",
-    cursor: "pointer",
+    borderColor: "rgba(255,255,255,0.08)",
+    borderRadius: "10px",
+    color: "#ffffff",
+    fontSize: "15px",
     fontWeight: 400,
+    padding: "0",
+    height: "68px",
+    cursor: "pointer",
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "10px",
+    transition: "border-color 0.12s, background 0.12s, color 0.12s",
   },
   title: {
     fontSize: "18px",
@@ -576,7 +593,7 @@ const s = {
   },
   actionRow: {
     display: "grid",
-    gridTemplateColumns: "1fr 1fr 1fr",
+    gridTemplateColumns: "1.5fr 1.5fr 1.5fr 1fr",
     gap: "8px",
     marginTop: "auto",
     marginBottom: "6px",
@@ -586,11 +603,12 @@ const s = {
     borderWidth: "1px",
     borderStyle: "solid",
     borderColor: "rgba(255,255,255,0.08)",
-    borderRadius: "11px",
+    borderRadius: "10px",
     color: "#ffffff",
     fontSize: "15px",
     fontWeight: 400,
-    padding: "14px 8px",
+    padding: "0",
+    height: "68px",
     cursor: "pointer",
     display: "flex",
     flexDirection: "row",
@@ -604,11 +622,12 @@ const s = {
     borderWidth: "1px",
     borderStyle: "solid",
     borderColor: "rgba(255,255,255,0.08)",
-    borderRadius: "11px",
+    borderRadius: "10px",
     color: "#ffffff",
     fontSize: "13px",
     fontWeight: 400,
-    padding: "14px 8px",
+    padding: "0",
+    height: "68px",
     cursor: "pointer",
     display: "flex",
     flexDirection: "row",
