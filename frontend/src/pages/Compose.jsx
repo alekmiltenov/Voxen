@@ -191,8 +191,7 @@ export default function Compose() {
   const deleteBackspace = useCallback(() => {
     setAppendedWords((prev) => {
       if (!prev.length) return prev;
-      const nextText = prev.join(" ").slice(0, -1).trimEnd();
-      return splitWords(nextText);
+      return prev.slice(0, -1);
     });
   }, []);
 
@@ -236,9 +235,9 @@ export default function Compose() {
       }
     });
 
+    items.push({ id: "action-delete", run: deleteBackspace });
     items.push({ id: "action-speak", run: speakText });
     items.push({ id: "action-keyboard", run: openKeyboard });
-    items.push({ id: "action-delete", run: deleteBackspace });
     items.push({ id: "action-back", run: () => navigate("/communicate") });
 
     return items;
@@ -260,7 +259,7 @@ export default function Compose() {
       rows.push(suggestionIds.slice(i, i + 4));
     }
 
-    rows.push(["action-speak", "action-keyboard", "action-delete", "action-back"]);
+    rows.push(["action-delete", "action-speak", "action-keyboard", "action-back"]);
     return rows;
   }, [suggestions]);
 
@@ -414,6 +413,22 @@ export default function Compose() {
           <button
             style={{
               ...s.speakBtn,
+              ...((enabled && indexById["action-delete"] === selIdx) || hoveredId === "action-delete" ? s.actionBtnActive : {}),
+            }}
+            onMouseEnter={() => setHoveredId("action-delete")}
+            onMouseLeave={() => setHoveredId(null)}
+            onClick={() => {
+              setSel(indexById["action-delete"]);
+              deleteBackspace();
+            }}
+          >
+            <span style={{...s.deleteEmoji, fontSize: "14px"}} aria-hidden="true">⌫</span>
+            <span>Delete word</span>
+          </button>
+
+          <button
+            style={{
+              ...s.speakBtn,
               ...((enabled && indexById["action-speak"] === selIdx) || hoveredId === "action-speak" ? s.actionBtnActive : {}),
             }}
             onMouseEnter={() => setHoveredId("action-speak")}
@@ -447,21 +462,6 @@ export default function Compose() {
               <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8" />
             </svg>
             <span>Keyboard</span>
-          </button>
-
-          <button
-            style={{
-              ...s.iconActionBtn,
-              ...((enabled && indexById["action-delete"] === selIdx) || hoveredId === "action-delete" ? s.actionBtnActive : {}),
-            }}
-            onMouseEnter={() => setHoveredId("action-delete")}
-            onMouseLeave={() => setHoveredId(null)}
-            onClick={() => {
-              setSel(indexById["action-delete"]);
-              deleteBackspace();
-            }}
-          >
-            <span style={s.deleteEmoji} aria-hidden="true">⌫</span>
           </button>
 
           <button

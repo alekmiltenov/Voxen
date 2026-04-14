@@ -203,6 +203,24 @@ export default function Keyboard() {
     navigate(returnTo, { state: { words: allWords, ...extraState } });
   }
 
+  async function goToCompose() {
+    const allWords = currentTextWords();
+    const prev = incomingWords.map(w => String(w).trim().toLowerCase()).filter(Boolean).join(" ");
+    const next = allWords.map(w => String(w).trim().toLowerCase()).filter(Boolean).join(" ");
+    const changed = prev !== next;
+
+    if (changed && allWords.length > 0) {
+      try {
+        await apiPost("/vocab/sentence", { words: allWords });
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    const starterPhrase = allWords.length > 0 ? allWords[0] : "";
+    navigate(`/compose?start=${encodeURIComponent(starterPhrase)}`, { state: { words: allWords, ...extraState } });
+  }
+
   function speakCurrentText() {
     const words = currentTextWords();
     if (!words.length) return;
@@ -228,7 +246,7 @@ export default function Keyboard() {
       setEyeHoldRepeatEnabled(!eyeHoldRepeatEnabledRef.current);
       return;
     }
-    if (key === "DONE") { speakCurrentText(); return; }
+    if (key === "DONE") { void goToCompose(); return; }
     pressKey(key);
   }
 
@@ -586,32 +604,21 @@ export default function Keyboard() {
           <button
             style={{
               ...s.key,
-              ...s.doneKey,
               flex: 1,
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "8px",
               ...((enabled && !scanEnabled && selRow === 3 && selCol === 2)
-                || (enabled && scanEnabled && scanPhase === "item" && scanRow === 3 && scanCol === 2)
+                || (enabled && scanEnabled && scanPhase === "item" && scanRow === 3 && selCol === 2)
                 || (!enabled && hoveredKey === "done")
-                ? s.doneSelectedKey
-                : (hoveredKey === "done"
-                  ? s.doneHoverKey
-                  : s.unselectedDoneKey)),
+                ? s.selectedKey
+                : s.unselectedKey),
             }}
             onMouseEnter={() => setHoveredKey("done")}
             onMouseLeave={() => setHoveredKey(null)}
             onClick={() => {
               setSelection(3, 2);
-              speakCurrentText();
+              void goToCompose();
             }}
           >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="18" height="18" aria-hidden="true">
-              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-              <path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07" />
-            </svg>
-            <span>Speak</span>
+            Done
           </button>
           {(mode === "eyes" || mode === "cnn") && (
             <button style={{

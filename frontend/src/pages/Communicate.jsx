@@ -80,7 +80,7 @@ export default function Communicate() {
         if (cmd === "DOWN") newSel = Math.min(totalItems - 1, selRef.current + gridSize);
         if (cmd === "FORWARD") {
           if (selRef.current < gridItems) selectStarter(startersRef.current[selRef.current]);
-          else if (selRef.current === gridItems) navigate("/keyboard", { state: { words: [] } });
+          else if (selRef.current === gridItems) navigate("/keyboard", { state: { words: [], returnTo: "/compose" } });
           else if (selRef.current === gridItems + 1) navigate("/");
         }
         if (cmd === "BACK") navigate("/");
@@ -91,7 +91,7 @@ export default function Communicate() {
         if (cmd === "RIGHT") newSel = wrap(selRef.current + 1, totalItems);
         if (cmd === "FORWARD") {
           if (selRef.current < gridItems) selectStarter(startersRef.current[selRef.current]);
-          else if (selRef.current === gridItems) navigate("/keyboard", { state: { words: [] } });
+          else if (selRef.current === gridItems) navigate("/keyboard", { state: { words: [], returnTo: "/compose" } });
           else if (selRef.current === gridItems + 1) navigate("/");
         }
       } else {
@@ -101,7 +101,7 @@ export default function Communicate() {
         if (cmd === "RIGHT") newSel = wrap(selRef.current + 1, totalItems);
         if (cmd === "FORWARD") {
           if (selRef.current < gridItems) selectStarter(startersRef.current[selRef.current]);
-          else if (selRef.current === gridItems) navigate("/keyboard", { state: { words: [] } });
+          else if (selRef.current === gridItems) navigate("/keyboard", { state: { words: [], returnTo: "/compose" } });
           else if (selRef.current === gridItems + 1) navigate("/");
         }
       }
@@ -164,7 +164,7 @@ export default function Communicate() {
             }}
             onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")}
             onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.03)")}
-            onClick={() => navigate("/keyboard", { state: { words: [] } })}
+            onClick={() => navigate("/keyboard", { state: { words: [], returnTo: "/compose" } })}
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="18" height="18" aria-hidden="true">
               <rect x="2" y="6" width="20" height="12" rx="2" />
