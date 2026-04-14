@@ -54,6 +54,7 @@ export default function Keyboard() {
   } = useInputControl();
 
   const incomingWords = location.state?.words ?? [];
+  const starterLength = location.state?.starterLength ?? 0;
   const returnTo      = location.state?.returnTo ?? "/communicate";
   const extraState    = location.state?.history ? { history: location.state.history } : {};
 
@@ -233,14 +234,26 @@ export default function Keyboard() {
     apiPost("/vocab/sentence", { words }).catch(() => {});
   }
 
+  function getProtectedLength() {
+    if (starterLength <= 0) return 0;
+    const starterWords = incomingWords.slice(0, starterLength);
+    return starterWords.join(" ").length + 1; // +1 for trailing space
+  }
+
   function pressKey(key) {
-    if (key === "DELETE") setText(t => t.slice(0, -1));
-    else setText(t => t + key.toLowerCase());
+    if (key === "DELETE") {
+      const protectedLen = getProtectedLength();
+      setText(t => t.length > protectedLen ? t.slice(0, -1) : t);
+    } else setText(t => t + key.toLowerCase());
   }
 
   function activateKey(key) {
     if (!key) return;
-    if (key === "DELETE") { setText(t => t.slice(0, -1)); return; }
+    if (key === "DELETE") {
+      const protectedLen = getProtectedLength();
+      setText(t => t.length > protectedLen ? t.slice(0, -1) : t);
+      return;
+    }
     if (key === "SPACE") { setText(t => t + " "); return; }
     if (key === "TOGGLE_REPEAT") {
       setEyeHoldRepeatEnabled(!eyeHoldRepeatEnabledRef.current);
@@ -413,7 +426,8 @@ export default function Keyboard() {
 
       if (e.key === "Backspace") {
         e.preventDefault();
-        setText(t => t.slice(0, -1));
+        const protectedLen = getProtectedLength();
+        setText(t => t.length > protectedLen ? t.slice(0, -1) : t);
         return;
       }
 
@@ -425,7 +439,7 @@ export default function Keyboard() {
 
       if (e.key === "Enter") {
         e.preventDefault();
-        speakCurrentText();
+        void goToCompose();
         return;
       }
 
@@ -443,7 +457,7 @@ export default function Keyboard() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [speakCurrentText, persistAndReturn]);
+  }, [goToCompose, persistAndReturn]);
 
   useEffect(() => {
     const onPaste = (e) => {
@@ -510,7 +524,7 @@ export default function Keyboard() {
           type="text"
           value={text}
           readOnly
-          placeholder="Start typing…"
+          placeholder="Start typing..."
           style={{
             ...s.displayInput,
             ...(text ? {} : { color: "rgba(255,255,255,0.2)" }),
@@ -584,7 +598,7 @@ export default function Keyboard() {
             }}
             onMouseEnter={() => setHoveredKey("delete")}
             onMouseLeave={() => setHoveredKey(null)}
-            onClick={() => { setSelection(3, 0); setText(t => t.slice(0, -1)); }}>
+            onClick={() => { setSelection(3, 0); const protectedLen = getProtectedLength(); setText(t => t.length > protectedLen ? t.slice(0, -1) : t); }}>
             ⌫
           </button>
           <button style={{

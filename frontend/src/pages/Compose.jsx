@@ -210,10 +210,11 @@ export default function Compose() {
     navigate("/keyboard", {
       state: {
         words: fullWords,
+        starterLength: starterWords.length,
         returnTo: `/compose?start=${encodeURIComponent(starterPhrase)}`,
       },
     });
-  }, [fullWords, navigate, starterPhrase]);
+  }, [fullWords, navigate, starterPhrase, starterWords.length]);
 
   const suggestions = useMemo(() => {
     return modelSuggestions
@@ -367,10 +368,12 @@ export default function Compose() {
         </div>
 
         <div style={s.display}>
-          <span style={s.displayText}>
-            {fullText}
-            <span style={s.cursor} />
-          </span>
+          <input
+            type="text"
+            value={fullText}
+            readOnly
+            style={s.displayText}
+          />
         </div>
 
         <div style={s.sectionLabel}>SUGGESTIONS:</div>
@@ -545,6 +548,12 @@ const s = {
     lineHeight: 1.3,
     wordBreak: "break-word",
     flex: 1,
+    width: "100%",
+    background: "transparent",
+    border: "none",
+    outline: "none",
+    padding: "0",
+    fontFamily: "inherit",
   },
   cursor: {
     display: "inline-block",
