@@ -116,6 +116,7 @@ export function InputControlProvider({ children }) {
 	});
 
 	const [eyeDebug, setEyeDebug] = useState(null);
+	const [headDebug, setHeadDebug] = useState(null);
 
 	const [cnnReady, setCnnReady] = useState(false);
 	const [gazeLabel, setGazeLabel] = useState("—");
@@ -404,16 +405,29 @@ export function InputControlProvider({ children }) {
 		let reconnectTimer;
 
 		const connect = () => {
-			const testWsUrl = "ws://localhost:8002/ws/head";
-			const backendWsUrl = HEAD_SERVER.replace("http", "ws") + "/ws/head";
-			const wsUrl = window.location.hostname === "localhost" ? testWsUrl : backendWsUrl;
+			const wsUrl = `${BACKEND_SERVER.replace("http", "ws")}/ws/head`;
 
 			ws = new WebSocket(wsUrl);
 
 			ws.onmessage = (event) => {
 				try {
 					const data = JSON.parse(event.data);
-					inputManagerRef.current?.handleHead(data, configRef.current);
+					console.log("[HEAD FRONTEND]", data);
+					const command = data?.command || data?.cmd;
+					setHeadDebug({
+						direction: command || "NONE",
+						confidence: data?.confidence ?? 0,
+						...(data?.debug || {}),
+					});
+					inputManagerRef.current?.handleHead(
+						{
+							command,
+							confidence: data?.confidence,
+							timestamp: data?.timestamp,
+							debug: data?.debug,
+						},
+						configRef.current
+					);
 				} catch {
 					// ignore malformed frame
 				}
@@ -464,6 +478,7 @@ export function InputControlProvider({ children }) {
 				eyeCentered,
 				eyeTracking,
 				eyeDebug,
+				headDebug,
 				recenterEyes,
 				setYBias,
 				setCenterBuffer,

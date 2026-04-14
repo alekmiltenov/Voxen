@@ -1,6 +1,6 @@
 import { processEyes } from "../eyes/eyesProcessor";
 import { processCNN } from "../cnn/cnnProcessor";
-import { processHead } from "../head/headProcessor";
+import { createHeadProcessor } from "../head/headProcessor";
 import { createFastDirectionalState } from "../shared/timingUtils";
 
 export class InputManager {
@@ -10,12 +10,8 @@ export class InputManager {
 
 		this.eyesState = createFastDirectionalState();
 		this.cnnState = createFastDirectionalState();
-		this.headState = {
-			lastCommandTime: 0,
-			holdCmd: null,
-			holdStart: 0,
-			selectionTriggered: false,
-		};
+		this.headProcessor = null;
+		this.lastHeadConfig = null;
 	}
 
 	setMode(mode) {
@@ -51,8 +47,12 @@ export class InputManager {
 	handleHead(input, config) {
 		if (this.mode !== "head") return;
 
-		const result = processHead(input, this.headState, config);
-		this.headState = result?.newState ?? this.headState;
+		if (!this.headProcessor || this.lastHeadConfig !== config) {
+			this.headProcessor = createHeadProcessor(config);
+			this.lastHeadConfig = config;
+		}
+
+		const result = this.headProcessor.process(input);
 
 		if (result?.command) {
 			this.dispatch(result.command);

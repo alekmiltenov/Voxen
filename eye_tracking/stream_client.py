@@ -77,7 +77,7 @@ def main():
             fps_count = 0
             fps_t     = now
 
-        cv2.imshow("Pi stream", frame)
+        cv2.imshow("ESP-32 camera stream", frame)
         if cv2.waitKey(1) == ord("q"):
             break
 
