@@ -5,119 +5,51 @@ import { DIRECTIONS, normalizeDirectionLabel } from "../input/shared/timingUtils
 
 const BACKEND_SERVER = "http://localhost:8000";
 const HEAD_SERVER = BACKEND_SERVER;
+const CONTROL_CONFIG_DEFAULTS_KEY = "controlConfigDefaults";
 
-const getInitialCenterBuffer = () => {
-	try {
-		const saved = localStorage.getItem("centerBuffer");
-		return saved ? parseFloat(saved) : 0.05;
-	} catch {
-		return 0.05;
-	}
-};
-
-const getInitialCommandDelay = () => {
-	try {
-		const saved = localStorage.getItem("eyeCommandDelay");
-		return saved ? parseFloat(saved) : 120;
-	} catch {
-		return 120;
-	}
-};
-
-const getInitialYBias = () => {
-	try {
-		const saved = localStorage.getItem("eyeYBias");
-		return saved ? parseFloat(saved) : 0;
-	} catch {
-		return 0;
-	}
-};
-
-const getInitialEyeHoldRepeatEnabled = () => {
-	try {
-		return localStorage.getItem("eyeHoldRepeatEnabled") === "1";
-	} catch {
-		return false;
-	}
-};
-
-const getInitialEyeHoldRepeatDelay = () => {
-	try {
-		const saved = localStorage.getItem("eyeHoldRepeatDelay");
-		return saved ? parseFloat(saved) : 180;
-	} catch {
-		return 180;
-	}
-};
-
-const getSelectionMethod = () => {
-	try {
-		const saved = (localStorage.getItem("eyeSelectionMethod") || "right").toLowerCase();
-		if (saved === "closed") return "center";
-		if (["left", "right", "up", "down", "center"].includes(saved)) return saved;
-		return "right";
-	} catch {
-		return "right";
-	}
-};
-
-const getSelectionDwell = () => {
-	try {
-		const saved = localStorage.getItem("eyeSelectionDwell");
-		return saved ? parseInt(saved, 10) : 650;
-	} catch {
-		return 650;
-	}
-};
-
-const getCnnSelectionMethod = () => {
-	try {
-		const saved = String(localStorage.getItem("cnnSelectionMethod") || "down").toLowerCase();
-		if (saved === "forward" || saved === "back") return "DOWN";
-		if (["left", "right", "up", "down", "center"].includes(saved)) return saved.toUpperCase();
-		return "DOWN";
-	} catch {
-		return "DOWN";
-	}
-};
-
-const getCnnSelectionDwell = () => {
-	try {
-		const saved = parseInt(localStorage.getItem("cnnSelectionDwell") || "", 10);
-		return Number.isFinite(saved) ? saved : 650;
-	} catch {
-		return 650;
-	}
-};
-
-const getCnnSelectionReleaseMin = () => {
-	try {
-		const saved = parseInt(localStorage.getItem("cnnSelectionReleaseMin") || "", 10);
-		return Number.isFinite(saved) ? saved : 80;
-	} catch {
-		return 80;
-	}
-};
-
-const getHeadSelectionMethod = () => {
-	try {
-		const saved = String(localStorage.getItem("headSelectionMethod") || "right").toLowerCase();
-		if (["left", "right", "up", "down", "center"].includes(saved)) {
-			return saved.toUpperCase();
-		}
-		return "RIGHT";
-	} catch {
-		return "RIGHT";
-	}
-};
-
-const getInitialCenterSelectMinConfidence = () => {
-	try {
-		const saved = parseFloat(localStorage.getItem("cnnCenterSelectMinConfidence") || "");
-		return Number.isFinite(saved) ? Math.max(0.55, Math.min(0.99, saved)) : 0.85;
-	} catch {
-		return 0.85;
-	}
+const DEFAULT_CONTROL_CONFIG = {
+	eyes: {
+		selectionMethod: "right",
+		selectionDwell: 650,
+			commandDelay: 120,
+		repeatEnabled: false,
+		repeatDelay: 180,
+		debounceMs: 200,
+		minStableFrames: 2,
+		directionDebounceMs: 80,
+		center: { x: 0, y: 0 },
+		yBias: 0,
+		centerBuffer: 0.05,
+	},
+	cnn: {
+		cnnMinConfidence: 0.45,
+		stableFrames: 4,
+		commandDelay: 120,
+		selectionMethod: "DOWN",
+		selectionDwell: 650,
+		selectionReleaseMin: 80,
+		repeatEnabled: false,
+		repeatDelay: 180,
+		centerSelectEnabled: false,
+		centerSelectMinConfidence: 0.85,
+		debounceMs: 200,
+		minStableFrames: 2,
+		directionDebounceMs: 80,
+	},
+	head: {
+		selectionMethod: "RIGHT",
+		selectionDwell: 650,
+		selectionReleaseMin: 80,
+		commandDelay: 120,
+		repeatEnabled: false,
+		repeatDelay: 180,
+		debounceMs: 200,
+		minStableFrames: 2,
+		directionDebounceMs: 80,
+		sensitivity: 0.35,
+		smoothing: 0.5,
+		deadzone: 0.1,
+	},
 };
 
 const InputControlContext = createContext(null);
@@ -129,44 +61,16 @@ const normalizeHeadSelectionMethod = (value, fallback = "RIGHT") => {
 	return fallback;
 };
 
-const buildDefaultControlConfig = () => ({
-	eyes: {
-		selectionMethod: getSelectionMethod(),
-		selectionDwell: getSelectionDwell(),
-		selectionReleaseMin: 80,
-		commandDelay: getInitialCommandDelay(),
-		repeatEnabled: getInitialEyeHoldRepeatEnabled(),
-		repeatDelay: getInitialEyeHoldRepeatDelay(),
-		debounceMs: 200,
-		minStableFrames: 2,
-		directionDebounceMs: 80,
-		center: { x: 0, y: 0 },
-		yBias: getInitialYBias(),
-		centerBuffer: getInitialCenterBuffer(),
-	},
-	cnn: {
-		cnnMinConfidence: 0.45,
-		commandDelay: 120,
-		selectionMethod: getCnnSelectionMethod(),
-		selectionDwell: getCnnSelectionDwell(),
-		selectionReleaseMin: getCnnSelectionReleaseMin(),
-		repeatEnabled: false,
-		repeatDelay: 180,
-		centerSelectEnabled: false,
-		centerSelectMinConfidence: getInitialCenterSelectMinConfidence(),
-	},
-	head: {
-		selectionMethod: getHeadSelectionMethod(),
-		selectionDwell: 650,
-		selectionReleaseMin: 80,
-		commandDelay: 120,
-		repeatEnabled: false,
-		repeatDelay: 180,
-		debounceMs: 200,
-		minStableFrames: 2,
-		directionDebounceMs: 80,
-	},
-});
+const getSavedControlConfigDefaults = () => {
+	try {
+		const savedDefaults = localStorage.getItem(CONTROL_CONFIG_DEFAULTS_KEY);
+		if (!savedDefaults) return null;
+		const parsed = JSON.parse(savedDefaults);
+		return isPlainObject(parsed) ? parsed : null;
+	} catch {
+		return null;
+	}
+};
 
 const mergeControlConfig = (defaults, saved) => ({
 	...defaults,
@@ -207,12 +111,15 @@ export function InputControlProvider({ children }) {
 
 	const [eyeDebug, setEyeDebug] = useState(null);
 	const [headDebug, setHeadDebug] = useState(null);
+	const [showRecenterOverlay, setShowRecenterOverlay] = useState(false);
+	const [showEyeCenterOverlay, setShowEyeCenterOverlay] = useState(false);
 
 	const [cnnReady, setCnnReady] = useState(false);
 	const [gazeLabel, setGazeLabel] = useState("—");
 	const [cnnDebug, setCnnDebug] = useState(null);
 	const [controlConfig, setControlConfig] = useState(() => {
-		const defaults = buildDefaultControlConfig();
+		const savedDefaults = getSavedControlConfigDefaults();
+		const defaults = mergeControlConfig(DEFAULT_CONTROL_CONFIG, savedDefaults);
 		try {
 			const saved = localStorage.getItem("controlConfig");
 			if (!saved) return defaults;
@@ -227,6 +134,8 @@ export function InputControlProvider({ children }) {
 	const modeRef = useRef(mode);
 	const handlerRef = useRef(null);
 	const autoCenterDoneRef = useRef(false);
+	const recenterOverlayTimerRef = useRef(null);
+	const eyeCenterOverlayHideTimerRef = useRef(null);
 
 	const centerRef = useRef(controlConfig.eyes.center || { x: 0, y: 0 });
 	const eyesConfigRef = useRef(controlConfig.eyes);
@@ -277,6 +186,54 @@ export function InputControlProvider({ children }) {
 		}));
 	}, []);
 
+	const saveAsDefault = useCallback((section) => {
+		if (!["eyes", "head", "cnn"].includes(section)) return;
+
+		const current = controlConfig[section];
+
+		try {
+			const existing = JSON.parse(localStorage.getItem(CONTROL_CONFIG_DEFAULTS_KEY)) || {};
+			const updated = {
+				...existing,
+				[section]: current,
+			};
+
+			localStorage.setItem(CONTROL_CONFIG_DEFAULTS_KEY, JSON.stringify(updated));
+		} catch {
+			// ignore storage errors
+		}
+
+		console.log("[DEFAULT SAVED]", section, current);
+
+		setControlConfig((prev) => ({
+			...prev,
+			[section]: current,
+		}));
+	}, [controlConfig]);
+
+	const resetToDefault = useCallback((section) => {
+		if (!["eyes", "head", "cnn"].includes(section)) return;
+
+		let saved = {};
+		try {
+			saved = JSON.parse(localStorage.getItem(CONTROL_CONFIG_DEFAULTS_KEY)) || {};
+		} catch {
+			saved = {};
+		}
+
+		const hasUserDefault = isPlainObject(saved?.[section]);
+		const next = hasUserDefault
+			? saved[section]
+			: DEFAULT_CONTROL_CONFIG[section];
+
+		setControlConfig((prev) => ({
+			...prev,
+			[section]: next,
+		}));
+
+		console.log("[RESET]", section, next);
+	}, []);
+
 	useEffect(() => {
 		modeRef.current = mode;
 		inputManagerRef.current?.setMode(mode);
@@ -319,6 +276,31 @@ export function InputControlProvider({ children }) {
 	const unregister = useCallback(() => {
 		handlerRef.current = null;
 	}, []);
+
+	useEffect(() => {
+		return () => {
+			if (recenterOverlayTimerRef.current) {
+				clearTimeout(recenterOverlayTimerRef.current);
+				recenterOverlayTimerRef.current = null;
+			}
+			if (eyeCenterOverlayHideTimerRef.current) {
+				clearTimeout(eyeCenterOverlayHideTimerRef.current);
+				eyeCenterOverlayHideTimerRef.current = null;
+			}
+		};
+	}, []);
+
+	useEffect(() => {
+		if (mode === "eyes") {
+			setShowEyeCenterOverlay(true);
+		} else {
+			setShowEyeCenterOverlay(false);
+			if (eyeCenterOverlayHideTimerRef.current) {
+				clearTimeout(eyeCenterOverlayHideTimerRef.current);
+				eyeCenterOverlayHideTimerRef.current = null;
+			}
+		}
+	}, [mode]);
 
 	const setControlMode = useCallback((newMode) => {
 		setMode(newMode);
@@ -384,7 +366,17 @@ export function InputControlProvider({ children }) {
 		}
 	}, [updateCnnConfig]);
 
-	const { eyeReady, eyeCentered, eyeTracking, recenterEyes } = useEyeTracking({
+		const handleAutoCenterCompleted = useCallback(() => {
+			if (eyeCenterOverlayHideTimerRef.current) {
+				clearTimeout(eyeCenterOverlayHideTimerRef.current);
+			}
+			eyeCenterOverlayHideTimerRef.current = setTimeout(() => {
+				setShowEyeCenterOverlay(false);
+				eyeCenterOverlayHideTimerRef.current = null;
+			}, 300);
+		}, []);
+
+	const { eyeReady, eyeCentered, eyeTracking, recenterEyes: recenterEyesBase } = useEyeTracking({
 		mode,
 		inputManagerRef,
 		eyesConfigRef,
@@ -392,7 +384,26 @@ export function InputControlProvider({ children }) {
 		setEyeDebug,
 		centerRef,
 		autoCenterDoneRef,
+			onAutoCenterCompleted: handleAutoCenterCompleted,
 	});
+
+		useEffect(() => {
+			if (mode === "eyes" && autoCenterDoneRef.current) {
+				setShowEyeCenterOverlay(false);
+			}
+		}, [mode, eyeCentered]);
+
+	const recenterEyes = useCallback(() => {
+		recenterEyesBase();
+		setShowRecenterOverlay(true);
+		if (recenterOverlayTimerRef.current) {
+			clearTimeout(recenterOverlayTimerRef.current);
+		}
+		recenterOverlayTimerRef.current = setTimeout(() => {
+			setShowRecenterOverlay(false);
+			recenterOverlayTimerRef.current = null;
+		}, 1500);
+	}, [recenterEyesBase]);
 
 	useEffect(() => {
 		if (mode !== "cnn") {
@@ -576,6 +587,8 @@ console.log("[HEAD RAW FULL]", data);
 				updateEyesConfig,
 				updateCnnConfig,
 				updateHeadConfig,
+				saveAsDefault,
+				resetToDefault,
 				register,
 				unregister,
 				dispatch,
@@ -587,6 +600,8 @@ console.log("[HEAD RAW FULL]", data);
 				eyeDebug,
 				headDebug,
 				recenterEyes,
+				showRecenterOverlay,
+				showEyeCenterOverlay,
 				setYBias,
 				setCenterBuffer,
 				setCommandDelay,

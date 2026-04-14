@@ -16,6 +16,7 @@ export function useEyeTracking({
 	setEyeDebug,
 	centerRef,
 	autoCenterDoneRef,
+	onAutoCenterCompleted,
 }) {
 	const [eyeReady, setEyeReady] = useState(false);
 	const [eyeCentered, setEyeCentered] = useState(false);
@@ -105,6 +106,7 @@ export function useEyeTracking({
 								centerRef.current = autoCenterResult.center;
 								updateEyesConfig({ center: autoCenterResult.center });
 								autoCenterDoneRef.current = true;
+								onAutoCenterCompleted?.();
 								setEyeCentered(true);
 							}
 						}
@@ -237,6 +239,7 @@ export function useEyeTracking({
 		setEyeDebug,
 		centerRef,
 		autoCenterDoneRef,
+		onAutoCenterCompleted,
 	]);
 
 	return {

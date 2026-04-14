@@ -47,6 +47,7 @@ export default function Settings() {
     controlConfig,
     mode, enabled, register, unregister,
     updateEyesConfig, updateCnnConfig, updateHeadConfig,
+    saveAsDefault, resetToDefault,
     sensorSettings,
     eyeReady, eyeCentered,
     recenterEyes,
@@ -54,7 +55,7 @@ export default function Settings() {
   } = useInputControl();
   const [activeTab, setActiveTab] = useState(() => {
     if (mode === "head" || mode === "cnn" || mode === "eyes") return mode;
-    return "eyes";
+    return "head";
   });
   const [advancedOpen, setAdvancedOpen] = useState({ eyes: false, head: false, cnn: false });
   const [cnnAntiJitterLevel, setCnnAntiJitterLevel] = useState(() => {
@@ -65,6 +66,7 @@ export default function Settings() {
   });
   const [cnnSettingsStatus, setCnnSettingsStatus] = useState("");
   const [cnnSettingsLoaded, setCnnSettingsLoaded] = useState(false);
+  const [defaultSavedSection, setDefaultSavedSection] = useState("");
 
   useEffect(() => {
     try {
@@ -158,6 +160,17 @@ export default function Settings() {
     return () => clearTimeout(t);
   }, [cnnAntiJitterLevel, cnnSettingsLoaded]);
 
+  useEffect(() => {
+    if (!defaultSavedSection) return;
+    const id = setTimeout(() => setDefaultSavedSection(""), 1500);
+    return () => clearTimeout(id);
+  }, [defaultSavedSection]);
+
+  const handleSaveAsDefault = (section) => {
+    saveAsDefault?.(section);
+    setDefaultSavedSection(section);
+  };
+
   return (
     <div style={s.page}>
       <div style={s.header}>
@@ -178,8 +191,8 @@ export default function Settings() {
 
           <div style={s.tabsRow}>
             {[
-              { id: "eyes", label: "Eyes" },
               { id: "head", label: "Head" },
+              { id: "eyes", label: "Eyes" },
               { id: "cnn", label: "CNN" },
             ].map((tab) => (
               <button
@@ -196,7 +209,11 @@ export default function Settings() {
 
         {activeTab === "eyes" && (
           <>
-            <SectionHeader title="Basic" subtitle="Core interaction settings" onReset={() => updateEyesConfig({ selectionMethod: "right", selectionDwell: 650, commandDelay: 120 })} />
+            <section style={s.section}>
+              <button type="button" style={s.makeDefaultBtn} onClick={() => handleSaveAsDefault("eyes")}>Make Default</button>
+              {defaultSavedSection === "eyes" && <p style={s.savedDefaultText}>Saved as default ✓</p>}
+            </section>
+            <SectionHeader title="Basic" subtitle="Core interaction settings" onReset={() => resetToDefault?.("eyes")} />
             <section style={s.section}>
               <div style={s.selectRow}>
                 <ControlLabel text="Selection method" help="Which direction confirms/selects after dwell." />
@@ -214,7 +231,7 @@ export default function Settings() {
               <SliderRow label="Command delay" hint="Time between commands" value={eyesCommandDelay} display={`${Math.round(eyesCommandDelay)} ms`} min={100} max={1200} step={50} accent="#22c55e" onChange={v => updateEyesConfig({ commandDelay: v })} />
             </section>
 
-            <SectionHeader title="Tuning" subtitle="Eye tracking behavior" onReset={() => updateEyesConfig({ yBias: 0, centerBuffer: 0.05 })} />
+            <SectionHeader title="Tuning" subtitle="Eye tracking behavior" onReset={() => resetToDefault?.("eyes")} />
             <section style={s.section}>
               <SliderRow label="Y bias" hint="Fix vertical drift" value={eyesYBias} display={eyesYBias.toFixed(2)} min={-2.0} max={2.0} step={0.05} accent="#22c55e" onChange={v => updateEyesConfig({ yBias: v })} />
               <Divider />
@@ -230,8 +247,8 @@ export default function Settings() {
               <p style={s.metaText}>{eyeCentered ? "Centered and tracking" : eyeReady ? "Centering…" : "Initializing camera…"}</p>
             </section>
 
-            <SectionHeader title="Advanced" subtitle="Fine control" collapsible open={advancedOpen.eyes} onToggle={() => setAdvancedOpen(p => ({ ...p, eyes: !p.eyes }))} onReset={() => updateEyesConfig({ debounceMs: 200, minStableFrames: 2, directionDebounceMs: 80, selectionReleaseMin: 80 })} />
-            {advancedOpen.eyes && (
+            <SectionHeader title="Advanced Settings" subtitle="Advanced (for fine tuning)" collapsible open={advancedOpen.eyes} onToggle={() => setAdvancedOpen(p => ({ ...p, eyes: !p.eyes }))} onReset={() => resetToDefault?.("eyes")} />
+            <CollapsibleSection open={advancedOpen.eyes}>
               <section style={s.section}>
                 <SliderRow label="Reaction delay" hint="Direction must stay stable before it counts" value={Number(controlConfig?.eyes?.debounceMs ?? 200)} display={`${Math.round(Number(controlConfig?.eyes?.debounceMs ?? 200))} ms`} min={0} max={800} step={20} accent="#22c55e" onChange={v => updateEyesConfig({ debounceMs: v })} />
                 <Divider />
@@ -241,13 +258,17 @@ export default function Settings() {
                 <Divider />
                 <SliderRow label="Selection release minimum" hint="Minimum hold before release-to-move can trigger" value={Number(controlConfig?.eyes?.selectionReleaseMin ?? 80)} display={`${Math.round(Number(controlConfig?.eyes?.selectionReleaseMin ?? 80))} ms`} min={0} max={500} step={10} accent="#22c55e" onChange={v => updateEyesConfig({ selectionReleaseMin: v })} />
               </section>
-            )}
+            </CollapsibleSection>
           </>
         )}
 
         {activeTab === "head" && (
           <>
-            <SectionHeader title="Basic" subtitle="Core interaction settings" onReset={() => updateHeadConfig({ selectionMethod: "RIGHT", selectionDwell: 650, commandDelay: 120 })} />
+            <section style={s.section}>
+              <button type="button" style={s.makeDefaultBtn} onClick={() => handleSaveAsDefault("head")}>Make Default</button>
+              {defaultSavedSection === "head" && <p style={s.savedDefaultText}>Saved as default ✓</p>}
+            </section>
+            <SectionHeader title="Basic" subtitle="Core interaction settings" onReset={() => resetToDefault?.("head")} />
             <section style={s.section}>
               <div style={s.selectRow}>
                 <ControlLabel text="Selection method" help="Which direction confirms/selects after dwell." />
@@ -265,7 +286,7 @@ export default function Settings() {
               <SliderRow label="Command delay" hint="Time between commands" value={headCommandDelay} display={`${Math.round(headCommandDelay)} ms`} min={100} max={1200} step={50} accent="#38bdf8" onChange={v => updateHeadConfig({ commandDelay: v })} />
             </section>
 
-            <SectionHeader title="Tuning" subtitle="Head signal processing" onReset={() => updateHeadConfig({ sensitivity: 0.35, smoothing: 0.5, deadzone: 0.1 })} />
+            <SectionHeader title="Tuning" subtitle="Head signal processing" onReset={() => resetToDefault?.("head")} />
             <section style={s.section}>
               <SliderRow label="Sensitivity (threshold)" hint="Lower = triggers on smaller tilts" value={headSensitivity} display={headSensitivity.toFixed(2)} min={0.1} max={1.0} step={0.01} accent="#38bdf8" onChange={v => updateHeadConfig({ sensitivity: v })} />
               <Divider />
@@ -284,8 +305,8 @@ export default function Settings() {
               </div>
             </section>
 
-            <SectionHeader title="Advanced" subtitle="Fine control" collapsible open={advancedOpen.head} onToggle={() => setAdvancedOpen(p => ({ ...p, head: !p.head }))} onReset={() => updateHeadConfig({ debounceMs: 200, minStableFrames: 2, directionDebounceMs: 80, selectionReleaseMin: 80 })} />
-            {advancedOpen.head && (
+            <SectionHeader title="Advanced Settings" subtitle="Advanced (for fine tuning)" collapsible open={advancedOpen.head} onToggle={() => setAdvancedOpen(p => ({ ...p, head: !p.head }))} onReset={() => resetToDefault?.("head")} />
+            <CollapsibleSection open={advancedOpen.head}>
               <section style={s.section}>
                 <SliderRow label="Reaction delay" hint="Direction must stay stable before it counts" value={Number(controlConfig?.head?.debounceMs ?? 200)} display={`${Math.round(Number(controlConfig?.head?.debounceMs ?? 200))} ms`} min={0} max={800} step={20} accent="#38bdf8" onChange={v => updateHeadConfig({ debounceMs: v })} />
                 <Divider />
@@ -295,12 +316,16 @@ export default function Settings() {
                 <Divider />
                 <SliderRow label="Selection release minimum" hint="Minimum hold before release-to-move can trigger" value={Number(controlConfig?.head?.selectionReleaseMin ?? 80)} display={`${Math.round(Number(controlConfig?.head?.selectionReleaseMin ?? 80))} ms`} min={0} max={500} step={10} accent="#38bdf8" onChange={v => updateHeadConfig({ selectionReleaseMin: v })} />
               </section>
-            )}
+            </CollapsibleSection>
           </>
         )}
 
         {activeTab === "cnn" && (
           <>
+            <section style={s.section}>
+              <button type="button" style={s.makeDefaultBtn} onClick={() => handleSaveAsDefault("cnn")}>Make Default</button>
+              {defaultSavedSection === "cnn" && <p style={s.savedDefaultText}>Saved as default ✓</p>}
+            </section>
             <SectionHeader title="Status" subtitle="CNN stream and current label" />
             <section style={s.section}>
               {cnnReady ? (
@@ -314,7 +339,7 @@ export default function Settings() {
               </div>
             </section>
 
-            <SectionHeader title="Basic" subtitle="Core interaction settings" onReset={() => updateCnnConfig({ selectionMethod: "DOWN", selectionDwell: 650, commandDelay: 120 })} />
+            <SectionHeader title="Basic" subtitle="Core interaction settings" onReset={() => resetToDefault?.("cnn")} />
             <section style={s.section}>
               <div style={s.selectRow}>
                 <ControlLabel text="Selection method" help="Which direction confirms/selects after dwell." />
@@ -332,7 +357,7 @@ export default function Settings() {
               <SliderRow label="Command delay" hint="Time between commands" value={cnnCommandDelay} display={`${Math.round(cnnCommandDelay)} ms`} min={100} max={1200} step={50} accent="#22c55e" onChange={v => updateCnnConfig({ commandDelay: v })} />
             </section>
 
-            <SectionHeader title="Tuning" subtitle="Prediction confidence and stability" onReset={() => { updateCnnConfig({ cnnMinConfidence: 0.45, stableFrames: 4 }); setCnnAntiJitterLevel(20); }} />
+            <SectionHeader title="Tuning" subtitle="Prediction confidence and stability" onReset={() => resetToDefault?.("cnn")} />
             <section style={s.section}>
               <SliderRow label="Min confidence" hint="Predictions below this are ignored" value={cnnMinConfidence} display={cnnMinConfidence.toFixed(2)} min={0.2} max={0.99} step={0.01} accent="#22c55e" onChange={v => updateCnnConfig({ cnnMinConfidence: v })} />
               <Divider />
@@ -349,8 +374,8 @@ export default function Settings() {
               <p style={s.metaText}>{cnnSettingsStatus || "Auto-saves backend anti-jitter"}</p>
             </section>
 
-            <SectionHeader title="Advanced" subtitle="Fine control" collapsible open={advancedOpen.cnn} onToggle={() => setAdvancedOpen(p => ({ ...p, cnn: !p.cnn }))} onReset={() => updateCnnConfig({ debounceMs: 200, minStableFrames: 2, directionDebounceMs: 80, selectionReleaseMin: 80 })} />
-            {advancedOpen.cnn && (
+            <SectionHeader title="Advanced Settings" subtitle="Advanced (for fine tuning)" collapsible open={advancedOpen.cnn} onToggle={() => setAdvancedOpen(p => ({ ...p, cnn: !p.cnn }))} onReset={() => resetToDefault?.("cnn")} />
+            <CollapsibleSection open={advancedOpen.cnn}>
               <section style={s.section}>
                 <SliderRow label="Reaction delay" hint="Direction must stay stable before it counts" value={Number(controlConfig?.cnn?.debounceMs ?? 200)} display={`${Math.round(Number(controlConfig?.cnn?.debounceMs ?? 200))} ms`} min={0} max={800} step={20} accent="#22c55e" onChange={v => updateCnnConfig({ debounceMs: v })} />
                 <Divider />
@@ -360,7 +385,7 @@ export default function Settings() {
                 <Divider />
                 <SliderRow label="Selection release minimum" hint="Minimum hold before release-to-move can trigger" value={Number(controlConfig?.cnn?.selectionReleaseMin ?? 80)} display={`${Math.round(Number(controlConfig?.cnn?.selectionReleaseMin ?? 80))} ms`} min={0} max={500} step={10} accent="#22c55e" onChange={v => updateCnnConfig({ selectionReleaseMin: v })} />
               </section>
-            )}
+            </CollapsibleSection>
           </>
         )}
       </div>
@@ -375,12 +400,33 @@ export default function Settings() {
 }
 
 function SectionHeader({ title, subtitle, onReset, collapsible = false, open = false, onToggle }) {
+  const [isHovered, setIsHovered] = useState(false);
+
   return (
     <section style={s.section}>
       <div style={s.groupHeader}>
         {collapsible ? (
-          <button type="button" style={s.advancedToggle} onClick={onToggle}>
-            <span>{open ? "▾" : "▸"}</span>
+          <button
+            type="button"
+            style={{
+              ...s.advancedToggle,
+              ...(isHovered ? s.advancedToggleHover : null),
+            }}
+            onClick={onToggle}
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
+            aria-expanded={open}
+            aria-label={`${title} ${open ? "collapse" : "expand"}`}
+          >
+            <span
+              style={{
+                ...s.advancedToggleIcon,
+                transform: `rotate(${open ? 90 : 0}deg)`,
+              }}
+              aria-hidden="true"
+            >
+              ▶
+            </span>
             <span style={s.sectionTitle}>{title}</span>
           </button>
         ) : (
@@ -390,6 +436,21 @@ function SectionHeader({ title, subtitle, onReset, collapsible = false, open = f
       </div>
       <p style={s.sectionSub}>{subtitle}</p>
     </section>
+  );
+}
+
+function CollapsibleSection({ open, children }) {
+  return (
+    <div
+      style={{
+        ...s.collapsibleWrap,
+        maxHeight: open ? 1200 : 0,
+        opacity: open ? 1 : 0,
+      }}
+      aria-hidden={!open}
+    >
+      <div style={s.collapsibleInner}>{children}</div>
+    </div>
   );
 }
 
@@ -521,17 +582,58 @@ const s = {
     fontWeight: 600,
     cursor: "pointer",
   },
+  makeDefaultBtn: {
+    alignSelf: "flex-start",
+    border: "1px solid rgba(34,197,94,0.45)",
+    background: "rgba(34,197,94,0.12)",
+    color: "#86efac",
+    borderRadius: 10,
+    padding: "10px 14px",
+    fontSize: 12,
+    fontWeight: 700,
+    letterSpacing: "0.05em",
+    cursor: "pointer",
+    textTransform: "uppercase",
+  },
+  savedDefaultText: {
+    fontSize: 12,
+    color: "#86efac",
+    margin: 0,
+  },
   advancedToggle: {
     display: "inline-flex",
     alignItems: "center",
-    gap: 8,
+    gap: 10,
     border: "none",
     background: "transparent",
     color: "rgba(255,255,255,0.75)",
     cursor: "pointer",
     fontSize: 14,
     fontWeight: 600,
-    padding: 0,
+    padding: "10px 12px",
+    width: "100%",
+    borderRadius: 12,
+    textAlign: "left",
+    transition: "background 0.2s ease",
+  },
+  advancedToggleHover: {
+    background: "rgba(255,255,255,0.05)",
+  },
+  advancedToggleIcon: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 14,
+    transition: "transform 0.2s ease",
+    transformOrigin: "center",
+  },
+  collapsibleWrap: {
+    overflow: "hidden",
+    transition: "max-height 0.2s ease, opacity 0.2s ease",
+    marginTop: -4,
+  },
+  collapsibleInner: {
+    paddingTop: 4,
   },
   sliderRow: { display: "flex", flexDirection: "column", gap: "6px" },
   sliderMeta: { display: "flex", justifyContent: "space-between", alignItems: "baseline" },
