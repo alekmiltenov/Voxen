@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 /**
+ * OLD AND BAD TEST SERVER SIMULATING COMANDS INSTEAD OF RAW ACCEL DATA!!!
  * HEAD Test Server
  * Simulates ESP32 accelerometer for testing head control without hardware
  * 

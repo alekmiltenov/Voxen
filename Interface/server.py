@@ -17,6 +17,10 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from pymongo import MongoClient, DESCENDING
 from dotenv import load_dotenv
+try:
+    import websockets
+except Exception:
+    websockets = None
 
 # ── Path setup ────────────────────────────────────────────────────────────────
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -481,9 +485,18 @@ from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def lifespan(app):
-    global _ws_loop
+    global _ws_loop, _head_bridge_task
     _ws_loop = asyncio.get_event_loop()
-    yield
+    _head_bridge_task = asyncio.create_task(_head_source_ws_bridge_loop())
+    try:
+        yield
+    finally:
+        if _head_bridge_task is not None:
+            _head_bridge_task.cancel()
+            try:
+                await _head_bridge_task
+            except asyncio.CancelledError:
+                pass
 
 app = FastAPI(title="Voxen AAC Server", lifespan=lifespan)
 
@@ -606,22 +619,33 @@ _head_filtered_x = 0.0
 _head_filtered_y = 0.0
 _head_filtered_z = 0.0
 _head_ws_clients: set = set()
+_head_source_ws_url = os.getenv("HEAD_SOURCE_WS_URL", "ws://localhost:8003/ws/head")
+_head_bridge_task = None
+_last_head_detect_log_ms = 0
 
 
 def _head_detect_command(x: float, y: float) -> Optional[str]:
-    if abs(x) < _head_deadzone and abs(y) < _head_deadzone:
+    global _last_head_detect_log_ms
+
+    threshold = 0.35
+    now_ms = int(time.time() * 1000)
+    if now_ms - _last_head_detect_log_ms >= 100:
+        print(f"[HEAD DETECT] x={round(x,3)} y={round(y,3)} threshold={threshold}")
+        _last_head_detect_log_ms = now_ms
+
+    if abs(x) < 0.1 and abs(y) < 0.1:
         return None
 
-    if abs(y) >= abs(x):
-        if y > _head_threshold:
+    if abs(x) > abs(y):
+        if x > threshold:
             return "RIGHT"
-        if y < -_head_threshold:
+        if x < -threshold:
             return "LEFT"
     else:
-        if x > _head_threshold:
-            return "BACK"
-        if x < -_head_threshold:
-            return "FORWARD"
+        if y > threshold:
+            return "DOWN"
+        if y < -threshold:
+            return "UP"
     return None
 
 
@@ -633,6 +657,116 @@ def _head_push_command(payload: dict):
             _ws_loop.call_soon_threadsafe(q.put_nowait, payload)
         except Exception:
             pass
+
+
+def _head_process_sample(x: float, y: float, z: float = 0.0) -> dict:
+    global _head_filtered_x, _head_filtered_y, _head_filtered_z
+
+    with _head_lock:
+        _head_filtered_x = _head_alpha * x + (1 - _head_alpha) * _head_filtered_x
+        _head_filtered_y = _head_alpha * y + (1 - _head_alpha) * _head_filtered_y
+        _head_filtered_z = _head_alpha * z + (1 - _head_alpha) * _head_filtered_z
+        cmd = _head_detect_command(_head_filtered_x, _head_filtered_y)
+        current_time_ms = int(time.time() * 1000)
+
+    command = cmd.upper() if isinstance(cmd, str) else None
+
+    return {
+        "command": command,
+        "confidence": 1.0 if command is not None else 0.0,
+        "source": "head",
+        "timestamp": current_time_ms,
+        "debug": {
+            "x": _head_filtered_x,
+            "y": _head_filtered_y,
+            "z": _head_filtered_z,
+        },
+    }
+
+
+async def _head_source_ws_bridge_loop():
+    if websockets is None:
+        print("[HEAD][bridge] websockets package unavailable; source bridge disabled")
+        return
+
+    while True:
+        try:
+            async with websockets.connect(_head_source_ws_url) as ws:
+                print(f"[HEAD][bridge] connected: {_head_source_ws_url}")
+                first_valid_logged = False
+                invalid_skipped_count = 0
+                last_invalid_log_ms = 0
+                last_pipe_log_ms = 0
+                while True:
+                    msg = await ws.recv()
+                    now_ms = int(time.time() * 1000)
+
+                    if isinstance(msg, bytes):
+                        try:
+                            msg = msg.decode("utf-8")
+                        except Exception:
+                            invalid_skipped_count += 1
+                            if now_ms - last_invalid_log_ms >= 1000:
+                                print(f"[HEAD][bridge] skipped invalid messages: {invalid_skipped_count}")
+                                last_invalid_log_ms = now_ms
+                                invalid_skipped_count = 0
+                            continue
+
+                    try:
+                        raw = json.loads(msg)
+                    except json.JSONDecodeError:
+                        invalid_skipped_count += 1
+                        if now_ms - last_invalid_log_ms >= 1000:
+                            print(f"[HEAD][bridge] skipped invalid messages: {invalid_skipped_count}")
+                            last_invalid_log_ms = now_ms
+                            invalid_skipped_count = 0
+                        continue
+
+                    if not isinstance(raw, dict):
+                        invalid_skipped_count += 1
+                        if now_ms - last_invalid_log_ms >= 1000:
+                            print(f"[HEAD][bridge] skipped invalid messages: {invalid_skipped_count}")
+                            last_invalid_log_ms = now_ms
+                            invalid_skipped_count = 0
+                        continue
+
+                    try:
+                        x = float(raw["x"])
+                        y = float(raw["y"])
+                        z = float(raw.get("z", 0.0))
+                    except (KeyError, TypeError, ValueError):
+                        invalid_skipped_count += 1
+                        if now_ms - last_invalid_log_ms >= 1000:
+                            print(f"[HEAD][bridge] skipped invalid messages: {invalid_skipped_count}")
+                            last_invalid_log_ms = now_ms
+                            invalid_skipped_count = 0
+                        continue
+
+                    payload = _head_process_sample(x, y, z)
+                    if not first_valid_logged:
+                        print("[HEAD][bridge] first valid message received")
+                        first_valid_logged = True
+                    if invalid_skipped_count > 0 and now_ms - last_invalid_log_ms >= 1000:
+                        print(f"[HEAD][bridge] skipped invalid messages: {invalid_skipped_count}")
+                        last_invalid_log_ms = now_ms
+                        invalid_skipped_count = 0
+
+                    if now_ms - last_pipe_log_ms >= 100:
+                        debug = payload.get("debug", {}) if isinstance(payload, dict) else {}
+                        px = float(debug.get("x", 0.0))
+                        py = float(debug.get("y", 0.0))
+                       
+                        last_pipe_log_ms = now_ms
+
+                    _head_push_command(payload)
+
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            print(f"[HEAD][bridge] disconnected: {e}")
+
+        print("[HEAD][bridge] reconnecting in 2s...")
+        await asyncio.sleep(2)
 
 
 class HeadDataRequest(BaseModel):
@@ -767,23 +901,23 @@ async def esp32_preview_ws(websocket: WebSocket):
 
 @app.post("/head/data")
 def head_receive_data(body: HeadDataRequest):
-    global _head_filtered_x, _head_filtered_y, _head_filtered_z
+    payload = _head_process_sample(body.x, body.y, body.z)
+    _head_push_command(payload)
 
-    with _head_lock:
-        x, y, z = body.x, body.y, body.z
-        _head_filtered_x = _head_alpha * x + (1 - _head_alpha) * _head_filtered_x
-        _head_filtered_y = _head_alpha * y + (1 - _head_alpha) * _head_filtered_y
-        _head_filtered_z = _head_alpha * z + (1 - _head_alpha) * _head_filtered_z
-        cmd = _head_detect_command(_head_filtered_x, _head_filtered_y)
-
-    _head_push_command({"cmd": cmd})
+    command = payload.get("command")
+    debug = payload.get("debug", {}) if isinstance(payload, dict) else {}
 
     return {
         "status": "ok",
-        "cmd": cmd,
-        "x": round(_head_filtered_x, 4),
-        "y": round(_head_filtered_y, 4),
-        "z": round(_head_filtered_z, 4),
+        "command": command,
+        "confidence": float(payload.get("confidence", 0.0) or 0.0),
+        "source": payload.get("source", "head"),
+        "timestamp": int(payload.get("timestamp", int(time.time() * 1000))),
+        "debug": {
+            "x": round(float(debug.get("x", 0.0) or 0.0), 4),
+            "y": round(float(debug.get("y", 0.0) or 0.0), 4),
+            "z": round(float(debug.get("z", 0.0) or 0.0), 4),
+        },
     }
 
 

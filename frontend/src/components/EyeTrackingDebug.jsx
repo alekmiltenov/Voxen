@@ -9,7 +9,7 @@ import { useLocation } from "react-router-dom";
  * On other pages: minimal direction indicator only
  */
 export default function EyeTrackingDebug() {
-  const { mode, eyeDebug, cnnDebug } = useInputControl();
+  const { mode, eyeDebug, cnnDebug, headDebug } = useInputControl();
   const location = useLocation();
   const isSettingsPage = location.pathname === "/settings";
   const showModeIndicator = ["/", "/communicate", "/compose"].includes(location.pathname);
@@ -27,6 +27,10 @@ export default function EyeTrackingDebug() {
 
   if (mode === "cnn" && showModeIndicator && cnnDebug) {
     return <GazeIndicator debug={cnnDebug} />;
+  }
+
+  if (mode === "head" && showModeIndicator && headDebug) {
+    return <GazeIndicator debug={headDebug} />;
   }
 
   return null;
