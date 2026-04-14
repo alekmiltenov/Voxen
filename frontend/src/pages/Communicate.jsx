@@ -125,14 +125,14 @@ export default function Communicate() {
       </div>
 
       <div style={s.starterBody}>
-        <p style={s.starterHint}>
+        {/* <p style={s.starterHint}>
           {!enabled ? "Start with:"
             : mode === "head" ? "HEAD: Use LEFT/RIGHT/UP/DOWN to browse · FORWARD to select · BACK to exit"
             : mode === "eyes" ? "EYES: Use LEFT/RIGHT/UP/DOWN to browse · FORWARD to select"
             : mode === "cnn" ? "CNN: Use LEFT/RIGHT/UP/DOWN to browse · FORWARD to select"
             : mode === "custom" ? "CUSTOM: Commands follow your action-source bindings"
             : "Select a starter…"}
-        </p>
+        </p> */}
 
         <div style={s.starterGrid}>
           {starters.map((phrase, i) => {

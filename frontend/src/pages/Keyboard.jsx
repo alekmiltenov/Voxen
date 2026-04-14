@@ -84,11 +84,12 @@ export default function Keyboard() {
   const scanEyesOverrideActiveRef = useRef(false);
 
   const NAV_ROWS = [
+    (mode === "eyes" || mode === "cnn") ? ["SCAN", "REPEAT"] : [],
     ROWS[0],
     ROWS[1],
     ROWS[2],
     getBottomRow(mode),
-  ];
+  ].filter(row => row.length > 0);
 
   const currentTextWords = () => text.trim().split(/\s+/).filter(Boolean);
 
@@ -250,6 +251,14 @@ export default function Keyboard() {
 
   function activateKey(key) {
     if (!key) return;
+    if (key === "SCAN") {
+      setScanEnabled(!scanEnabledRef.current);
+      return;
+    }
+    if (key === "REPEAT") {
+      setEyeHoldRepeatEnabled(!eyeHoldRepeatEnabledRef.current);
+      return;
+    }
     if (key === "DELETE") {
       const protectedLen = getProtectedLength();
       setText(t => t.length > protectedLen ? t.slice(0, -1) : t);
@@ -270,11 +279,12 @@ export default function Keyboard() {
   }
 
   useEffect(() => {
-    const lastRowLen = NAV_ROWS[3].length;
-    if (selRowRef.current === 3 && selColRef.current > lastRowLen - 1) {
-      setSelection(3, lastRowLen - 1);
+    const lastRowIdx = NAV_ROWS.length - 1;
+    const lastRowLen = NAV_ROWS[lastRowIdx]?.length || 1;
+    if (selRowRef.current === lastRowIdx && selColRef.current > lastRowLen - 1) {
+      setSelection(lastRowIdx, lastRowLen - 1);
     }
-    if (scanRowRef.current === 3 && scanColRef.current > lastRowLen - 1) {
+    if (scanRowRef.current === lastRowIdx && scanColRef.current > lastRowLen - 1) {
       setScanCol(lastRowLen - 1);
     }
   }, [mode]);
@@ -489,35 +499,6 @@ export default function Keyboard() {
           <span style={s.label}>Keyboard</span>
           <div style={s.titleSideSlot} />
         </div>
-
-        {enabled && (
-          <div style={s.scanControlsWrap}>
-            <button
-              style={{ ...s.scanToggleBtn, ...(scanEnabled ? s.scanToggleBtnOn : {}) }}
-              onClick={() => setScanEnabled(v => !v)}
-            >
-              {scanEnabled ? "Scan: ON" : "Scan: OFF"}
-            </button>
-
-            {scanEnabled && (
-              <div style={s.scanSpeedWrap}>
-                <button
-                  style={s.scanStepBtn}
-                  onClick={() => setScanMs(ms => Math.max(SCAN_MIN_MS, ms - SCAN_STEP_MS))}
-                >
-                  -
-                </button>
-                <span style={s.scanSpeedValue}>{scanMs}ms</span>
-                <button
-                  style={s.scanStepBtn}
-                  onClick={() => setScanMs(ms => Math.min(SCAN_MAX_MS, ms + SCAN_STEP_MS))}
-                >
-                  +
-                </button>
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
       <div style={s.display}>
@@ -534,10 +515,15 @@ export default function Keyboard() {
         />
       </div>
 
-      <div style={s.keysArea}>
+      <div style={{
+        ...s.keysArea,
+        marginTop: (mode === "eyes" || mode === "cnn") ? "1%" : "4%",
+      }}>
+        {/*
         {enabled && scanEnabled && mode === "eyes" && (
           <p style={s.scanGestureHint}>Hold DOWN to select · Hold UP to go back</p>
         )}
+        */}
 
         {/*
         {enabled && (
@@ -552,26 +538,68 @@ export default function Keyboard() {
         )}
         */}
 
+        {(mode === "eyes" || mode === "cnn") && (
+          <div
+            style={{
+              ...s.row,
+              ...s.controlRow,
+              ...(enabled && scanEnabled && scanPhase === "row" && scanRow === 0 ? s.scanRowActive : {}),
+            }}
+          >
+            <button style={{
+              ...s.key,
+              ...(scanEnabled ? s.toggleKeyOn : s.toggleKeyOff),
+              flex: 1,
+              ...((enabled && !scanEnabled && selRow === 0 && selCol === 0)
+                || (!enabled && hoveredKey === "scan")
+                || (enabled && scanEnabled && scanPhase === "item" && scanRow === 0 && scanCol === 0)
+                ? s.selectedKey
+                : (scanEnabled ? s.unselectedToggleOnKey : s.unselectedToggleOffKey)),
+            }}
+              onMouseEnter={() => setHoveredKey("scan")}
+              onMouseLeave={() => setHoveredKey(null)}
+              onClick={() => { setSelection(0, 0); setScanEnabled(!scanEnabled); }}>
+              {scanEnabled ? "Scan: ON" : "Scan: OFF"}
+            </button>
+            <button style={{
+              ...s.key,
+              ...(eyeHoldRepeatEnabled ? s.toggleKeyOn : s.toggleKeyOff),
+              flex: 1,
+              ...((enabled && !scanEnabled && selRow === 0 && selCol === 1)
+                || (!enabled && hoveredKey === "repeat")
+                || (enabled && scanEnabled && scanPhase === "item" && scanRow === 0 && scanCol === 1)
+                ? s.selectedKey
+                : (eyeHoldRepeatEnabled ? s.unselectedToggleOnKey : s.unselectedToggleOffKey)),
+            }}
+              onMouseEnter={() => setHoveredKey("repeat")}
+              onMouseLeave={() => setHoveredKey(null)}
+              onClick={() => { setSelection(0, 1); setEyeHoldRepeatEnabled(!eyeHoldRepeatEnabled); }}>
+              {eyeHoldRepeatEnabled ? "Repeat: ON" : "Repeat: OFF"}
+            </button>
+          </div>
+        )}
+
         {ROWS.map((row, ri) => (
           <div
             key={ri}
             style={{
               ...s.row,
               ...s.letterRow,
-              ...(enabled && scanEnabled && scanPhase === "row" && scanRow === ri ? s.scanRowActive : {}),
+              ...(enabled && scanEnabled && scanPhase === "row" && scanRow === ri + 1 ? s.scanRowActive : {}),
             }}
           >
             {row.map((key, ci) => {
               const keyId = `key-${ri}-${ci}`;
-              const isSelected = enabled && !scanEnabled && selRow === ri && selCol === ci;
+              const rowOffset = (mode === "eyes" || mode === "cnn") ? 1 : 0;
+              const isSelected = enabled && !scanEnabled && selRow === ri + rowOffset && selCol === ci;
               const isHovered = !enabled && hoveredKey === keyId;
-              const isScanSelected = enabled && scanEnabled && scanPhase === "item" && scanRow === ri && scanCol === ci;
+              const isScanSelected = enabled && scanEnabled && scanPhase === "item" && scanRow === ri + rowOffset && scanCol === ci;
               return (
                 <button key={`${ri}-${ci}-${key}`}
                   style={{ ...s.key, ...s.letterKey, ...((isSelected || isHovered || isScanSelected) ? s.selectedKey : s.unselectedKey) }}
                   onMouseEnter={() => setHoveredKey(keyId)}
                   onMouseLeave={() => setHoveredKey(null)}
-                  onClick={() => { setSelection(ri, ci); pressKey(key); }}>
+                  onClick={() => { setSelection(ri + rowOffset, ci); pressKey(key); }}>
                   {key}
                 </button>
               );
@@ -583,7 +611,7 @@ export default function Keyboard() {
           style={{
             ...s.row,
             ...s.actionRow,
-            ...(enabled && scanEnabled && scanPhase === "row" && scanRow === 3 ? s.scanRowActive : {}),
+            ...(enabled && scanEnabled && scanPhase === "row" && scanRow === 4 ? s.scanRowActive : {}),
           }}
         >
           <button
@@ -591,37 +619,37 @@ export default function Keyboard() {
               ...s.key,
               ...s.bsKey,
               flex: 1,
-              ...((enabled && !scanEnabled && selRow === 3 && selCol === 0)
+              ...((enabled && !scanEnabled && selRow === 4 && selCol === 0)
                 || (!enabled && hoveredKey === "delete")
-                || (enabled && scanEnabled && scanPhase === "item" && scanRow === 3 && scanCol === 0)
+                || (enabled && scanEnabled && scanPhase === "item" && scanRow === 4 && scanCol === 0)
                 ? s.selectedKey
                 : s.unselectedBackspaceKey),
             }}
             onMouseEnter={() => setHoveredKey("delete")}
             onMouseLeave={() => setHoveredKey(null)}
-            onClick={() => { setSelection(3, 0); const protectedLen = getProtectedLength(); setText(t => t.length > protectedLen ? t.slice(0, -1) : t); }}>
+            onClick={() => { setSelection(4, 0); const protectedLen = getProtectedLength(); setText(t => t.length > protectedLen ? t.slice(0, -1) : t); }}>
             ⌫
           </button>
           <button style={{
             ...s.key,
             flex: 2,
-            ...((enabled && !scanEnabled && selRow === 3 && selCol === 1)
+            ...((enabled && !scanEnabled && selRow === 4 && selCol === 1)
               || (!enabled && hoveredKey === "space")
-              || (enabled && scanEnabled && scanPhase === "item" && scanRow === 3 && scanCol === 1)
+              || (enabled && scanEnabled && scanPhase === "item" && scanRow === 4 && scanCol === 1)
               ? s.selectedKey
               : s.unselectedKey),
           }}
             onMouseEnter={() => setHoveredKey("space")}
             onMouseLeave={() => setHoveredKey(null)}
-            onClick={() => { setSelection(3, 1); setText(t => t + " "); }}>
+            onClick={() => { setSelection(4, 1); setText(t => t + " "); }}>
             Space
           </button>
           <button
             style={{
               ...s.key,
               flex: 1,
-              ...((enabled && !scanEnabled && selRow === 3 && selCol === 2)
-                || (enabled && scanEnabled && scanPhase === "item" && scanRow === 3 && selCol === 2)
+              ...((enabled && !scanEnabled && selRow === 4 && selCol === 2)
+                || (enabled && scanEnabled && scanPhase === "item" && scanRow === 4 && selCol === 2)
                 || (!enabled && hoveredKey === "done")
                 ? s.selectedKey
                 : s.unselectedKey),
@@ -629,35 +657,18 @@ export default function Keyboard() {
             onMouseEnter={() => setHoveredKey("done")}
             onMouseLeave={() => setHoveredKey(null)}
             onClick={() => {
-              setSelection(3, 2);
+              setSelection(4, 2);
               void goToCompose();
             }}
           >
             Done
           </button>
-          {(mode === "eyes" || mode === "cnn") && (
-            <button style={{
-              ...s.key,
-              ...(eyeHoldRepeatEnabled ? s.toggleKeyOn : s.toggleKeyOff),
-              flex: 1.2,
-              ...((enabled && !scanEnabled && selRow === 3 && selCol === 3)
-                || (!enabled && hoveredKey === "repeat")
-                || (enabled && scanEnabled && scanPhase === "item" && scanRow === 3 && scanCol === 3)
-                ? s.selectedKey
-                : (eyeHoldRepeatEnabled ? s.unselectedToggleOnKey : s.unselectedToggleOffKey)),
-            }}
-              onMouseEnter={() => setHoveredKey("repeat")}
-              onMouseLeave={() => setHoveredKey(null)}
-              onClick={() => { setSelection(3, 3); setEyeHoldRepeatEnabled(!eyeHoldRepeatEnabled); }}>
-              {eyeHoldRepeatEnabled ? "Repeat: ON" : "Repeat: OFF"}
-            </button>
-          )}
           <button style={{
             ...s.key,
             ...s.backKeyStyle,
-            flex: 0.8,
-            ...((enabled && !scanEnabled && selRow === 3 && selCol === 4)
-              || (enabled && scanEnabled && scanPhase === "item" && scanRow === 3 && selCol === 4)
+            flex: 1,
+            ...((enabled && !scanEnabled && selRow === 4 && selCol === 3)
+              || (enabled && scanEnabled && scanPhase === "item" && scanRow === 4 && selCol === 3)
               || (!enabled && hoveredKey === "back")
               ? s.selectedKey
               : (hoveredKey === "back"
@@ -666,7 +677,7 @@ export default function Keyboard() {
           }}
             onMouseEnter={() => setHoveredKey("back")}
             onMouseLeave={() => setHoveredKey(null)}
-            onClick={() => { setSelection(3, 4); persistAndReturn(); }}>
+            onClick={() => { setSelection(4, 3); persistAndReturn(); }}>
             ← Back
           </button>
         </div>
@@ -714,7 +725,7 @@ const s = {
     top: "50%",
     right: 0,
     transform: "translateY(-50%)",
-    display: "flex",
+    display: "none",
     alignItems: "center",
     gap: 8,
     zIndex: 2,
@@ -865,7 +876,7 @@ const s = {
     minHeight: 0,
     width: "90%",
     alignSelf: "center",
-    marginTop: "4%",
+    marginTop: "1%",
     marginBottom: "8px",
     justifyContent: "space-between",
     position: "relative",
@@ -900,8 +911,12 @@ const s = {
     width: "100%",
     alignSelf: "center",
   },
+  controlRow: {
+    width: "100%",
+    alignSelf: "center",
+  },
   key: {
-    flex: 1, padding: "0", height: "68px", borderRadius: "10px",
+    flex: 1, padding: "0", height: "56px", borderRadius: "10px",
     background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
     color: "rgba(255,255,255,0.85)", fontSize: "17px", cursor: "pointer", transition: "background 0.1s",
   },
