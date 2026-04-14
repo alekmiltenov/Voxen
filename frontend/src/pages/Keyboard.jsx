@@ -201,7 +201,8 @@ export default function Keyboard() {
       }
     }
 
-    navigate(returnTo, { state: { words: allWords, ...extraState } });
+    const starterWords = incomingWords.slice(0, starterLength);
+    navigate(returnTo, { state: { words: starterWords, ...extraState } });
   }
 
   async function goToCompose() {
@@ -531,7 +532,6 @@ export default function Keyboard() {
           }}
           onClick={(e) => e.preventDefault()}
         />
-        {text && <span style={s.cursor} />}
       </div>
 
       <div style={s.keysArea}>

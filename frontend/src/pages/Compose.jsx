@@ -374,7 +374,6 @@ export default function Compose() {
             readOnly
             style={s.displayText}
           />
-          {fullText && <span style={s.cursor} />}
         </div>
 
         <div style={s.sectionLabel}>SUGGESTIONS:</div>
@@ -573,6 +572,7 @@ const s = {
     color: "rgba(255,255,255,0.25)",
     textTransform: "uppercase",
     marginBottom: "-6px",
+    marginTop: "8px",
     fontWeight: 400,
   },
   suggestionGrid: {
@@ -581,7 +581,7 @@ const s = {
     gap: "8px",
   },
   suggestionBtn: {
-    padding: "12px 8px",
+    padding: "16px 8px",
     borderRadius: "10px",
     borderWidth: "1px",
     borderStyle: "solid",
