@@ -374,6 +374,7 @@ export default function Compose() {
             readOnly
             style={s.displayText}
           />
+          {fullText && <span style={s.cursor} />}
         </div>
 
         <div style={s.sectionLabel}>SUGGESTIONS:</div>
@@ -491,7 +492,7 @@ const s = {
     boxSizing: "border-box",
     background: "#111111",
     borderRadius: "0px",
-    padding: "24px 28px",
+    padding: "16px",
     display: "flex",
     flexDirection: "column",
     gap: "14px",
@@ -503,6 +504,7 @@ const s = {
     justifyContent: "center",
     height: "34px",
     flexShrink: 0,
+    marginTop: "12px",
   },
   backBtn: {
     background: "rgba(255,255,255,0.03)",
@@ -532,28 +534,28 @@ const s = {
   },
   display: {
     background: "rgba(255,255,255,0.03)",
-    borderWidth: "1px",
-    borderStyle: "solid",
-    borderColor: "rgba(255,255,255,0.08)",
-    borderRadius: "12px",
-    padding: "20px 22px",
-    minHeight: "80px",
+    marginTop: "3%",
+    minHeight: "64px",
+    padding: "14px 20px",
+    borderRadius: "14px",
+    border: "1px solid rgba(255,255,255,0.08)",
     display: "flex",
     alignItems: "center",
+    marginLeft: "30px",
+    marginRight: "30px",
   },
   displayText: {
-    fontSize: "28px",
-    color: "#e0e0e0",
-    fontWeight: 400,
-    lineHeight: 1.3,
-    wordBreak: "break-word",
-    flex: 1,
-    width: "100%",
+    fontSize: "26px",
+    fontWeight: "300",
+    color: "#ffffff",
     background: "transparent",
     border: "none",
     outline: "none",
-    padding: "0",
+    width: "100%",
+    padding: 0,
+    margin: 0,
     fontFamily: "inherit",
+    caretColor: "rgba(255,255,255,0.55)",
   },
   cursor: {
     display: "inline-block",
@@ -566,7 +568,7 @@ const s = {
     flexShrink: 0,
   },
   sectionLabel: {
-    fontSize: "10px",
+    fontSize: "clamp(12px, 1.5vw, 14px)",
     letterSpacing: "0.12em",
     color: "rgba(255,255,255,0.25)",
     textTransform: "uppercase",
@@ -605,7 +607,7 @@ const s = {
     gridTemplateColumns: "1.5fr 1.5fr 1.5fr 1fr",
     gap: "8px",
     marginTop: "auto",
-    marginBottom: "6px",
+    marginBottom: "8px",
   },
   speakBtn: {
     background: "rgba(255,255,255,0.03)",

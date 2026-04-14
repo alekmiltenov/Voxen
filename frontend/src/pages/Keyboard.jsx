@@ -531,6 +531,7 @@ export default function Keyboard() {
           }}
           onClick={(e) => e.preventDefault()}
         />
+        {text && <span style={s.cursor} />}
       </div>
 
       <div style={s.keysArea}>
@@ -681,12 +682,13 @@ const s = {
     display: "flex", flexDirection: "column", padding: "16px", gap: "14px",
   },
   topBar: {
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
     position: "relative",
-    minHeight: "34px",
-    marginTop: "10px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    height: "34px",
+    flexShrink: 0,
+    marginTop: "12px",
   },
   titleCluster: {
     display: "grid",
@@ -784,8 +786,11 @@ const s = {
     transition: "border-color 0.1s, background 0.1s, color 0.1s",
   },
   label: {
-    fontSize: "14px", color: "rgba(255,255,255,0.35)",
-    letterSpacing: "0.1em", textTransform: "uppercase",
+    fontSize: "18px",
+    fontWeight: "300",
+    color: "rgba(255,255,255,0.5)",
+    letterSpacing: "0.1em",
+    textTransform: "uppercase",
     justifySelf: "center",
   },
   headHint: {
@@ -803,9 +808,16 @@ const s = {
     whiteSpace: "nowrap",
   },
   display: {
-    marginTop: "20px",
-    minHeight: "64px", padding: "14px 20px", borderRadius: "14px",
-    border: "1px solid rgba(255,255,255,0.08)", display: "flex", alignItems: "center", marginLeft: "30px", marginRight: "30px", marginTop: "3%",
+    background: "rgba(255,255,255,0.03)",
+    marginTop: "3%",
+    minHeight: "64px",
+    padding: "14px 20px",
+    borderRadius: "14px",
+    border: "1px solid rgba(255,255,255,0.08)",
+    display: "flex",
+    alignItems: "center",
+    marginLeft: "30px",
+    marginRight: "30px",
   },
   displayText: { fontSize: "26px", fontWeight: "300", color: "#ffffff" },
   placeholder: { fontSize: "20px", color: "rgba(255,255,255,0.2)" },

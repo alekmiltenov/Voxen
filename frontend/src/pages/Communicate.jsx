@@ -208,6 +208,7 @@ const s = {
     left: 0,
     right: 0,
     minHeight: "5%",
+    marginTop: "12px",
   },
   starterBackBtn: {
     position: "absolute",
