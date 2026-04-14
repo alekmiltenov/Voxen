@@ -71,18 +71,21 @@ const getSelectionDwell = () => {
 
 const getHeadSelectionMethod = () => {
 	try {
-		return (localStorage.getItem("headSelectionMethod") || "forward").toUpperCase();
+		const saved = String(localStorage.getItem("headSelectionMethod") || "down").toLowerCase();
+		if (saved === "forward" || saved === "back") return "DOWN";
+		if (["left", "right", "up", "down", "center"].includes(saved)) return saved.toUpperCase();
+		return "DOWN";
 	} catch {
-		return "FORWARD";
+		return "DOWN";
 	}
 };
 
 const getInitialCenterSelectMinConfidence = () => {
 	try {
 		const saved = parseFloat(localStorage.getItem("cnnCenterSelectMinConfidence") || "");
-		return Number.isFinite(saved) ? Math.max(0.55, Math.min(0.99, saved)) : 0.82;
+		return Number.isFinite(saved) ? Math.max(0.55, Math.min(0.99, saved)) : 0.85;
 	} catch {
-		return 0.82;
+		return 0.85;
 	}
 };
 
@@ -96,6 +99,68 @@ const getInitialCenterSelectNoiseDelta = () => {
 };
 
 const InputControlContext = createContext(null);
+
+const isPlainObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
+const normalizeSelectionMethod = (value, fallback = "DOWN") => {
+	const normalized = String(value || "").toUpperCase();
+	if (normalized === "FORWARD" || normalized === "BACK") return "DOWN";
+	if (["LEFT", "RIGHT", "UP", "DOWN", "CENTER"].includes(normalized)) return normalized;
+	return fallback;
+};
+
+const buildDefaultControlConfig = () => ({
+	eyes: {
+		selectionMethod: getSelectionMethod(),
+		selectionDwell: getSelectionDwell(),
+		selectionReleaseMin: 80,
+		commandDelay: getInitialCommandDelay(),
+		repeatEnabled: getInitialEyeHoldRepeatEnabled(),
+		repeatDelay: getInitialEyeHoldRepeatDelay(),
+		debounceMs: 200,
+		minStableFrames: 2,
+		directionDebounceMs: 80,
+		center: { x: 0, y: 0 },
+		yBias: getInitialYBias(),
+		centerBuffer: getInitialCenterBuffer(),
+	},
+	cnn: {
+		cnnMinConfidence: 0.45,
+		minStableFrames: 2,
+		commandDelay: 120,
+		centerSelectEnabled: false,
+		centerSelectMinConfidence: getInitialCenterSelectMinConfidence(),
+		centerSelectMinStableFrames: 2,
+		centerSelectNoiseDelta: getInitialCenterSelectNoiseDelta(),
+	},
+	head: {
+		selectionMethod: getHeadSelectionMethod(),
+		selectionDwell: 650,
+		selectionReleaseMin: 80,
+		commandDelay: 120,
+		repeatEnabled: false,
+		repeatDelay: 180,
+		debounceMs: 200,
+		minStableFrames: 2,
+		directionDebounceMs: 80,
+	},
+});
+
+const mergeControlConfig = (defaults, saved) => ({
+	...defaults,
+	eyes: {
+		...defaults.eyes,
+		...(isPlainObject(saved?.eyes) ? saved.eyes : {}),
+	},
+	cnn: {
+		...defaults.cnn,
+		...(isPlainObject(saved?.cnn) ? saved.cnn : {}),
+	},
+	head: {
+		...defaults.head,
+		...(isPlainObject(saved?.head) ? saved.head : {}),
+		selectionMethod: normalizeSelectionMethod(saved?.head?.selectionMethod, defaults.head.selectionMethod),
+	},
+});
 
 export function InputControlProvider({ children }) {
 	const [mode, setMode] = useState(() => {
@@ -121,26 +186,25 @@ export function InputControlProvider({ children }) {
 	const [cnnReady, setCnnReady] = useState(false);
 	const [gazeLabel, setGazeLabel] = useState("—");
 	const [cnnDebug, setCnnDebug] = useState(null);
-
-	const [eyeHoldRepeatEnabled, setEyeHoldRepeatEnabledState] = useState(getInitialEyeHoldRepeatEnabled);
-	const [eyeHoldRepeatDelay, setEyeHoldRepeatDelayState] = useState(getInitialEyeHoldRepeatDelay);
-	const [centerSelectMinConfidence, setCenterSelectMinConfidenceState] = useState(getInitialCenterSelectMinConfidence);
-	const [centerSelectNoiseDelta, setCenterSelectNoiseDeltaState] = useState(getInitialCenterSelectNoiseDelta);
+	const [controlConfig, setControlConfig] = useState(() => {
+		const defaults = buildDefaultControlConfig();
+		try {
+			const saved = localStorage.getItem("controlConfig");
+			if (!saved) return defaults;
+			return mergeControlConfig(defaults, JSON.parse(saved));
+		} catch {
+			return defaults;
+		}
+	});
 
 	const modeRef = useRef(mode);
 	const handlerRef = useRef(null);
-
-	const configRef = useRef(null);
 	const autoCenterDoneRef = useRef(false);
 
-	const centerRef = useRef({ x: 0, y: 0 });
-	const yBiasRef = useRef(getInitialYBias());
-	const centerBufferRef = useRef(getInitialCenterBuffer());
-	const commandDelayRef = useRef(getInitialCommandDelay());
-	const eyeHoldRepeatEnabledRef = useRef(eyeHoldRepeatEnabled);
-	const eyeHoldRepeatDelayRef = useRef(eyeHoldRepeatDelay);
-	const centerSelectMinConfidenceRef = useRef(centerSelectMinConfidence);
-	const centerSelectNoiseDeltaRef = useRef(centerSelectNoiseDelta);
+	const centerRef = useRef(controlConfig.eyes.center || { x: 0, y: 0 });
+	const eyesConfigRef = useRef(controlConfig.eyes);
+	const cnnConfigRef = useRef(controlConfig.cnn);
+	const headConfigRef = useRef(controlConfig.head);
 
 	const dispatch = useCallback((cmd) => {
 		if (modeRef.current === "off") return;
@@ -153,30 +217,40 @@ export function InputControlProvider({ children }) {
 		inputManagerRef.current = new InputManager(dispatch, modeRef.current);
 	}
 
-	function buildManagerConfig() {
-		return {
-			center: centerRef.current,
-			yBias: yBiasRef.current,
-			centerBuffer: centerBufferRef.current,
-			commandDelay: commandDelayRef.current,
-			switchDebounceMs: 30,
-			selectionReleaseMin: 80,
-			selectionMethod: getSelectionMethod().toUpperCase(),
-			selectionDwell: getSelectionDwell(),
-			repeatEnabled: eyeHoldRepeatEnabledRef.current,
-			repeatDelay: eyeHoldRepeatDelayRef.current,
-			holdDuration,
-			headSelectionMethod: getHeadSelectionMethod(),
-			cnnMinConfidence: 0.45,
-			centerSelectMinConfidence: centerSelectMinConfidenceRef.current,
-			centerSelectNoiseDelta: centerSelectNoiseDeltaRef.current,
-		};
-	}
+	const updateEyesConfig = useCallback((partial) => {
+		setControlConfig((prev) => ({
+			...prev,
+			eyes: {
+				...prev.eyes,
+				...partial,
+			},
+		}));
+	}, []);
+
+	const updateCnnConfig = useCallback((partial) => {
+		setControlConfig((prev) => ({
+			...prev,
+			cnn: {
+				...prev.cnn,
+				...partial,
+			},
+		}));
+	}, []);
+
+	const updateHeadConfig = useCallback((partial) => {
+		setControlConfig((prev) => ({
+			...prev,
+			head: {
+				...prev.head,
+				...partial,
+				selectionMethod: normalizeSelectionMethod(partial?.selectionMethod ?? prev.head.selectionMethod),
+			},
+		}));
+	}, []);
 
 	useEffect(() => {
 		modeRef.current = mode;
 		inputManagerRef.current?.setMode(mode);
-		configRef.current = buildManagerConfig();
 		try {
 			localStorage.setItem("controlMode", mode);
 		} catch {
@@ -185,24 +259,29 @@ export function InputControlProvider({ children }) {
 	}, [mode]);
 
 	useEffect(() => {
-		configRef.current = buildManagerConfig();
-	}, [holdDuration]);
+		const id = setTimeout(() => {
+			try {
+				localStorage.setItem("controlConfig", JSON.stringify(controlConfig));
+			} catch {
+				// ignore storage errors
+			}
+		}, 200);
+
+		return () => clearTimeout(id);
+	}, [controlConfig]);
 
 	useEffect(() => {
-		eyeHoldRepeatEnabledRef.current = eyeHoldRepeatEnabled;
-	}, [eyeHoldRepeatEnabled]);
+		eyesConfigRef.current = controlConfig.eyes;
+		centerRef.current = controlConfig.eyes.center || centerRef.current;
+	}, [controlConfig.eyes]);
 
 	useEffect(() => {
-		eyeHoldRepeatDelayRef.current = eyeHoldRepeatDelay;
-	}, [eyeHoldRepeatDelay]);
+		cnnConfigRef.current = controlConfig.cnn;
+	}, [controlConfig.cnn]);
 
 	useEffect(() => {
-		centerSelectMinConfidenceRef.current = centerSelectMinConfidence;
-	}, [centerSelectMinConfidence]);
-
-	useEffect(() => {
-		centerSelectNoiseDeltaRef.current = centerSelectNoiseDelta;
-	}, [centerSelectNoiseDelta]);
+		headConfigRef.current = controlConfig.head;
+	}, [controlConfig.head]);
 
 	const register = useCallback((fn) => {
 		handlerRef.current = fn;
@@ -217,90 +296,82 @@ export function InputControlProvider({ children }) {
 	}, []);
 
 	const setYBias = useCallback((value) => {
-		yBiasRef.current = Number(value) || 0;
-		configRef.current = buildManagerConfig();
+		const next = Number(value) || 0;
+		updateEyesConfig({ yBias: next });
 		try {
-			localStorage.setItem("eyeYBias", String(yBiasRef.current));
+			localStorage.setItem("eyeYBias", String(next));
 		} catch {
 			// ignore storage errors
 		}
-	}, []);
+	}, [updateEyesConfig]);
 
 	const setCenterBuffer = useCallback((value) => {
-		centerBufferRef.current = Number(value) || 0;
-		configRef.current = buildManagerConfig();
+		const next = Number(value) || 0;
+		updateEyesConfig({ centerBuffer: next });
 		try {
-			localStorage.setItem("centerBuffer", String(centerBufferRef.current));
+			localStorage.setItem("centerBuffer", String(next));
 		} catch {
 			// ignore storage errors
 		}
-	}, []);
+	}, [updateEyesConfig]);
 
 	const setCommandDelay = useCallback((value) => {
-		commandDelayRef.current = Number(value) || 0;
-		configRef.current = buildManagerConfig();
+		const next = Number(value) || 0;
+		updateEyesConfig({ commandDelay: next });
 		try {
-			localStorage.setItem("eyeCommandDelay", String(commandDelayRef.current));
+			localStorage.setItem("eyeCommandDelay", String(next));
 		} catch {
 			// ignore storage errors
 		}
-	}, []);
+	}, [updateEyesConfig]);
 
 	const setEyeHoldRepeatEnabled = useCallback((enabledValue) => {
 		const next = !!enabledValue;
-		setEyeHoldRepeatEnabledState(next);
-		eyeHoldRepeatEnabledRef.current = next;
-		configRef.current = buildManagerConfig();
+		updateEyesConfig({ repeatEnabled: next });
 		try {
 			localStorage.setItem("eyeHoldRepeatEnabled", next ? "1" : "0");
 		} catch {
 			// ignore storage errors
 		}
-	}, []);
+	}, [updateEyesConfig]);
 
 	const setEyeHoldRepeatDelay = useCallback((value) => {
 		const next = Number(value) || 180;
-		setEyeHoldRepeatDelayState(next);
-		eyeHoldRepeatDelayRef.current = next;
-		configRef.current = buildManagerConfig();
+		updateEyesConfig({ repeatDelay: next });
 		try {
 			localStorage.setItem("eyeHoldRepeatDelay", String(next));
 		} catch {
 			// ignore storage errors
 		}
-	}, []);
+	}, [updateEyesConfig]);
 
 	const setCenterSelectMinConfidence = useCallback((value) => {
-		const next = Math.max(0.55, Math.min(0.99, Number(value) || 0.82));
-		setCenterSelectMinConfidenceState(next);
-		centerSelectMinConfidenceRef.current = next;
-		configRef.current = buildManagerConfig();
+		const next = Math.max(0.55, Math.min(0.99, Number(value) || 0.85));
+		updateCnnConfig({ centerSelectMinConfidence: next });
 		try {
 			localStorage.setItem("cnnCenterSelectMinConfidence", String(next));
 		} catch {
 			// ignore storage errors
 		}
-	}, []);
+	}, [updateCnnConfig]);
 
 	const setCenterSelectNoiseDelta = useCallback((value) => {
 		const next = Math.max(0.01, Math.min(0.2, Number(value) || 0.06));
-		setCenterSelectNoiseDeltaState(next);
-		centerSelectNoiseDeltaRef.current = next;
-		configRef.current = buildManagerConfig();
+		updateCnnConfig({ centerSelectNoiseDelta: next });
 		try {
 			localStorage.setItem("cnnCenterSelectNoiseDelta", String(next));
 		} catch {
 			// ignore storage errors
 		}
-	}, []);
+	}, [updateCnnConfig]);
 
 	const { eyeReady, eyeCentered, eyeTracking, recenterEyes } = useEyeTracking({
 		mode,
 		inputManagerRef,
-		configRef,
+		eyesConfigRef,
+		updateEyesConfig,
 		setEyeDebug,
 		centerRef,
-		centerBufferRef,
 		autoCenterDoneRef,
 	});
 
@@ -325,6 +396,7 @@ export function InputControlProvider({ children }) {
 
 			ws.onmessage = (event) => {
 				try {
+					const cnnConfig = cnnConfigRef.current;
 					const data = JSON.parse(event.data);
 					const name = String(data?.name || "").toUpperCase();
 					const confidence = Number(data?.confidence);
@@ -339,10 +411,10 @@ export function InputControlProvider({ children }) {
 							confidence: data.confidence,
 							timestamp: Date.now(),
 						},
-						configRef.current
+						cnnConfig
 					);
 					const processorDebug = result?.debug || {};
-					const fallbackSelectionMethod = String(configRef.current?.selectionMethod || "RIGHT").toUpperCase();
+					const fallbackSelectionMethod = String(cnnConfig?.selectionMethod || "RIGHT").toUpperCase();
 
 					setCnnDebug({
 						...processorDebug,
@@ -354,7 +426,7 @@ export function InputControlProvider({ children }) {
 						reason: String(processorDebug.reason || "HOLDING"),
 						selectionMethod: String(processorDebug.selectionMethod || fallbackSelectionMethod).toUpperCase(),
 						selectionStartMs: Math.max(0, Number(processorDebug.selectionStartMs || 0)),
-						selectionDwell: Math.max(0, Number(processorDebug.selectionDwell || configRef.current?.selectionDwell || 0)),
+						selectionDwell: Math.max(0, Number(processorDebug.selectionDwell || cnnConfig?.selectionDwell || 0)),
 						progress: Math.max(0, Math.min(1, Number(processorDebug.progress || 0))),
 					});
 				} catch {
@@ -387,7 +459,7 @@ export function InputControlProvider({ children }) {
 		if (mode !== "head") return;
 
 		if (window.location.hostname !== "localhost") {
-			fetch(`${HEAD_SERVER}/settings`)
+			fetch(`${HEAD_SERVER}/head/settings`)
 				.then((response) => response.json())
 				.then((settings) => {
 					setSensorSettings({
@@ -413,21 +485,22 @@ export function InputControlProvider({ children }) {
 				try {
 					const data = JSON.parse(event.data);
 					console.log("[HEAD FRONTEND]", data);
-					const command = data?.command || data?.cmd;
-					setHeadDebug({
-						direction: command || "NONE",
-						confidence: data?.confidence ?? 0,
-						...(data?.debug || {}),
-					});
-					inputManagerRef.current?.handleHead(
+					const command = data?.command;
+					const result = inputManagerRef.current?.handleHead(
 						{
 							command,
 							confidence: data?.confidence,
-							timestamp: data?.timestamp,
+							timestamp: Date.now(),
 							debug: data?.debug,
 						},
-						configRef.current
+						headConfigRef.current
 					);
+
+					setHeadDebug({
+						...result?.debug,
+						direction: result?.debug?.direction || command || "NONE",
+						confidence: data?.confidence ?? 0,
+					});
 				} catch {
 					// ignore malformed frame
 				}
@@ -451,7 +524,7 @@ export function InputControlProvider({ children }) {
 	const updateSensorSettings = useCallback((newSettings) => {
 		setSensorSettings(newSettings);
 		if (window.location.hostname !== "localhost") {
-			fetch(`${HEAD_SERVER}/settings`, {
+			fetch(`${HEAD_SERVER}/head/settings`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify(newSettings),
@@ -467,6 +540,10 @@ export function InputControlProvider({ children }) {
 				mode,
 				setControlMode,
 				enabled,
+				controlConfig,
+				updateEyesConfig,
+				updateCnnConfig,
+				updateHeadConfig,
 				register,
 				unregister,
 				dispatch,
@@ -483,16 +560,16 @@ export function InputControlProvider({ children }) {
 				setYBias,
 				setCenterBuffer,
 				setCommandDelay,
-				eyeHoldRepeatEnabled,
+				eyeHoldRepeatEnabled: !!controlConfig.eyes.repeatEnabled,
 				setEyeHoldRepeatEnabled,
-				eyeHoldRepeatDelay,
+				eyeHoldRepeatDelay: Number(controlConfig.eyes.repeatDelay || 0),
 				setEyeHoldRepeatDelay,
 				cnnReady,
 				gazeLabel,
 				cnnDebug,
-				centerSelectMinConfidence,
+				centerSelectMinConfidence: Number(controlConfig.cnn.centerSelectMinConfidence || 0),
 				setCenterSelectMinConfidence,
-				centerSelectNoiseDelta,
+				centerSelectNoiseDelta: Number(controlConfig.cnn.centerSelectNoiseDelta || 0),
 				setCenterSelectNoiseDelta,
 			}}
 		>

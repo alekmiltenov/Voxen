@@ -11,10 +11,10 @@ const EYE_DEBUG_INTERVAL_MS = 120;
 export function useEyeTracking({
 	mode,
 	inputManagerRef,
-	configRef,
+	eyesConfigRef,
+	updateEyesConfig,
 	setEyeDebug,
 	centerRef,
-	centerBufferRef,
 	autoCenterDoneRef,
 }) {
 	const [eyeReady, setEyeReady] = useState(false);
@@ -103,41 +103,40 @@ export function useEyeTracking({
 							const autoCenterResult = autoCenterRef.current.update(gaze);
 							if (autoCenterResult.ready) {
 								centerRef.current = autoCenterResult.center;
-								if (configRef.current) {
-									configRef.current.center = centerRef.current;
-								}
+								updateEyesConfig({ center: autoCenterResult.center });
 								autoCenterDoneRef.current = true;
 								setEyeCentered(true);
 							}
 						}
 
 						if (autoCenterDoneRef.current) {
+							const eyesConfig = eyesConfigRef.current;
 							const managerResult = inputManagerRef.current?.handleEyes(
 								{
 									gazeX: gaze.x,
 									gazeY: gaze.y,
 									timestamp: now,
 								},
-								configRef.current
+								eyesConfig
 							);
 
 							if (now - lastDebugTimeRef.current > EYE_DEBUG_INTERVAL_MS) {
 								lastDebugTimeRef.current = now;
 								const processorDebug = managerResult?.debug || {};
-								const fallbackSelectionMethod = String(configRef.current?.selectionMethod || "RIGHT").toUpperCase();
+								const fallbackSelectionMethod = String(eyesConfig?.selectionMethod || "RIGHT").toUpperCase();
 								setEyeDebug({
 									gazeX: gaze.x,
 									gazeY: gaze.y,
 									centerX: centerRef.current.x,
 									centerY: centerRef.current.y,
-									centerBuffer: centerBufferRef.current,
+									centerBuffer: Number(eyesConfig?.centerBuffer || 0),
 									direction: String(processorDebug.direction || "CENTER").toUpperCase(),
 									reason: String(processorDebug.reason || "NONE"),
 									state: processorDebug.state,
 									progress: Math.max(0, Math.min(1, Number(processorDebug.progress || 0))),
 									selectionMethod: String(processorDebug.selectionMethod || fallbackSelectionMethod).toUpperCase(),
 									selectionStartMs: Math.max(0, Number(processorDebug.selectionStartMs || 0)),
-									selectionDwell: Math.max(0, Number(processorDebug.selectionDwell || configRef.current?.selectionDwell || 0)),
+									selectionDwell: Math.max(0, Number(processorDebug.selectionDwell || eyesConfig?.selectionDwell || 0)),
 									stable: Boolean(processorDebug.isStable),
 									rawHeldMs: Number(processorDebug.rawHeldMs || 0),
 									stableFrames: Number(processorDebug.stableFrames || 0),
@@ -233,10 +232,10 @@ export function useEyeTracking({
 	}, [
 		mode,
 		inputManagerRef,
-		configRef,
+		eyesConfigRef,
+		updateEyesConfig,
 		setEyeDebug,
 		centerRef,
-		centerBufferRef,
 		autoCenterDoneRef,
 	]);
 
