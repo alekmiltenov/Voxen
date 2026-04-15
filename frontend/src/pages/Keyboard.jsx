@@ -91,6 +91,8 @@ export default function Keyboard() {
     getBottomRow(mode),
   ].filter(row => row.length > 0);
 
+  const actionRowIndex = NAV_ROWS.length - 1;
+
   const currentTextWords = () => text.trim().split(/\s+/).filter(Boolean);
 
   const setSelection = (r, c) => {
@@ -274,7 +276,9 @@ export default function Keyboard() {
   }
 
   function activateSelectedKey(navRows) {
-    const key = navRows[selRowRef.current]?.[selColRef.current];
+    const row = navRows[selRowRef.current];
+    const key = row?.[selColRef.current];
+    if (!key) return;
     activateKey(key);
   }
 
@@ -300,7 +304,9 @@ export default function Keyboard() {
     if (!enabled || !scanEnabled) return;
 
     const timer = window.setInterval(() => {
-      const rows = [ROWS[0], ROWS[1], ROWS[2], getBottomRow(modeRef.current)];
+      const rows = (modeRef.current === "eyes" || modeRef.current === "cnn")
+        ? [["SCAN", "REPEAT"], ROWS[0], ROWS[1], ROWS[2], getBottomRow(modeRef.current)]
+        : [ROWS[0], ROWS[1], ROWS[2], getBottomRow(modeRef.current)];
 
       if (scanPhaseRef.current === "row") {
         setScanRow(prev => (prev + 1) % rows.length);
@@ -317,12 +323,9 @@ export default function Keyboard() {
 
   useEffect(() => {
     register((cmd) => {
-      const navRows = [
-        ROWS[0],
-        ROWS[1],
-        ROWS[2],
-        getBottomRow(modeRef.current),
-      ];
+      const navRows = (modeRef.current === "eyes" || modeRef.current === "cnn")
+        ? [["SCAN", "REPEAT"], ROWS[0], ROWS[1], ROWS[2], getBottomRow(modeRef.current)]
+        : [ROWS[0], ROWS[1], ROWS[2], getBottomRow(modeRef.current)];
       const row = selRowRef.current;
       const col = selColRef.current;
       const rowCount = navRows.length;
@@ -375,22 +378,22 @@ export default function Keyboard() {
       }
 
       if (cmd === "UP") {
-        const nextRow = (row - 1 + rowCount) % rowCount;
+        const nextRow = Math.max(0, row - 1);
         const nextLen = navRows[nextRow].length;
         setSelection(nextRow, Math.min(col, nextLen - 1));
       }
       if (cmd === "DOWN") {
-        const nextRow = (row + 1) % rowCount;
+        const nextRow = Math.min(rowCount - 1, row + 1);
         const nextLen = navRows[nextRow].length;
         setSelection(nextRow, Math.min(col, nextLen - 1));
       }
       if (cmd === "LEFT") {
         const curLen = navRows[row].length;
-        setSelection(row, (col - 1 + curLen) % curLen);
+        setSelection(row, Math.max(0, col - 1));
       }
       if (cmd === "RIGHT") {
         const curLen = navRows[row].length;
-        setSelection(row, (col + 1) % curLen);
+        setSelection(row, Math.min(curLen - 1, col + 1));
       }
       if (cmd === "FORWARD") {
         activateSelectedKey(navRows);
@@ -611,7 +614,7 @@ export default function Keyboard() {
           style={{
             ...s.row,
             ...s.actionRow,
-            ...(enabled && scanEnabled && scanPhase === "row" && scanRow === 4 ? s.scanRowActive : {}),
+            ...(enabled && scanEnabled && scanPhase === "row" && scanRow === actionRowIndex ? s.scanRowActive : {}),
           }}
         >
           <button
@@ -619,37 +622,37 @@ export default function Keyboard() {
               ...s.key,
               ...s.bsKey,
               flex: 1,
-              ...((enabled && !scanEnabled && selRow === 4 && selCol === 0)
+              ...((enabled && !scanEnabled && selRow === actionRowIndex && selCol === 0)
                 || (!enabled && hoveredKey === "delete")
-                || (enabled && scanEnabled && scanPhase === "item" && scanRow === 4 && scanCol === 0)
+                || (enabled && scanEnabled && scanPhase === "item" && scanRow === actionRowIndex && scanCol === 0)
                 ? s.selectedKey
                 : s.unselectedBackspaceKey),
             }}
             onMouseEnter={() => setHoveredKey("delete")}
             onMouseLeave={() => setHoveredKey(null)}
-            onClick={() => { setSelection(4, 0); const protectedLen = getProtectedLength(); setText(t => t.length > protectedLen ? t.slice(0, -1) : t); }}>
+            onClick={() => { setSelection(actionRowIndex, 0); const protectedLen = getProtectedLength(); setText(t => t.length > protectedLen ? t.slice(0, -1) : t); }}>
             ⌫
           </button>
           <button style={{
             ...s.key,
             flex: 2,
-            ...((enabled && !scanEnabled && selRow === 4 && selCol === 1)
+            ...((enabled && !scanEnabled && selRow === actionRowIndex && selCol === 1)
               || (!enabled && hoveredKey === "space")
-              || (enabled && scanEnabled && scanPhase === "item" && scanRow === 4 && scanCol === 1)
+              || (enabled && scanEnabled && scanPhase === "item" && scanRow === actionRowIndex && scanCol === 1)
               ? s.selectedKey
               : s.unselectedKey),
           }}
             onMouseEnter={() => setHoveredKey("space")}
             onMouseLeave={() => setHoveredKey(null)}
-            onClick={() => { setSelection(4, 1); setText(t => t + " "); }}>
+            onClick={() => { setSelection(actionRowIndex, 1); setText(t => t + " "); }}>
             Space
           </button>
           <button
             style={{
               ...s.key,
               flex: 1,
-              ...((enabled && !scanEnabled && selRow === 4 && selCol === 2)
-                || (enabled && scanEnabled && scanPhase === "item" && scanRow === 4 && selCol === 2)
+              ...((enabled && !scanEnabled && selRow === actionRowIndex && selCol === 2)
+                || (enabled && scanEnabled && scanPhase === "item" && scanRow === actionRowIndex && selCol === 2)
                 || (!enabled && hoveredKey === "done")
                 ? s.selectedKey
                 : s.unselectedKey),
@@ -657,7 +660,7 @@ export default function Keyboard() {
             onMouseEnter={() => setHoveredKey("done")}
             onMouseLeave={() => setHoveredKey(null)}
             onClick={() => {
-              setSelection(4, 2);
+              setSelection(actionRowIndex, 2);
               void goToCompose();
             }}
           >
@@ -667,8 +670,8 @@ export default function Keyboard() {
             ...s.key,
             ...s.backKeyStyle,
             flex: 1,
-            ...((enabled && !scanEnabled && selRow === 4 && selCol === 3)
-              || (enabled && scanEnabled && scanPhase === "item" && scanRow === 4 && selCol === 3)
+            ...((enabled && !scanEnabled && selRow === actionRowIndex && selCol === 3)
+              || (enabled && scanEnabled && scanPhase === "item" && scanRow === actionRowIndex && selCol === 3)
               || (!enabled && hoveredKey === "back")
               ? s.selectedKey
               : (hoveredKey === "back"
@@ -677,7 +680,7 @@ export default function Keyboard() {
           }}
             onMouseEnter={() => setHoveredKey("back")}
             onMouseLeave={() => setHoveredKey(null)}
-            onClick={() => { setSelection(4, 3); persistAndReturn(); }}>
+            onClick={() => { setSelection(actionRowIndex, 3); persistAndReturn(); }}>
             ← Back
           </button>
         </div>

@@ -245,11 +245,13 @@ export default function Actions() {
         })}
       </div>
 
+      {/*
       {enabled && (
         <p style={s.legend}>
           Navigation controls enabled
         </p>
       )}
+      */}
     </div>
   );
 }

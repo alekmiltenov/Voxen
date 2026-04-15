@@ -68,11 +68,25 @@ export default function Settings() {
   const [cnnSettingsLoaded, setCnnSettingsLoaded] = useState(false);
   const [defaultSavedSection, setDefaultSavedSection] = useState("");
 
+  const [keyboardScanMs, setKeyboardScanMs] = useState(() => {
+    try {
+      const saved = parseInt(localStorage.getItem("keyboardAutoScanMs") || "", 10);
+      if (Number.isFinite(saved)) {
+        return Math.max(300, Math.min(1500, saved));
+      }
+      return 800;
+    } catch { return 800; }
+  });
+
   useEffect(() => {
     try {
       localStorage.setItem("cnnAntiJitterLevel", String(Math.round(cnnAntiJitterLevel)));
     } catch {}
   }, [cnnAntiJitterLevel]);
+
+  useEffect(() => {
+    try { localStorage.setItem("keyboardAutoScanMs", String(keyboardScanMs)); } catch {}
+  }, [keyboardScanMs]);
 
   useEffect(() => {
     register((cmd) => {
@@ -182,7 +196,6 @@ export default function Settings() {
       <div style={s.content}>
         <section style={s.section}>
           <div style={s.sectionHeader}>
-            <span style={s.sectionIcon}>🎛️</span>
             <div>
               <p style={s.sectionTitle}>Control Panel</p>
               <p style={s.sectionSub}>Current mode: <strong style={{ color: "rgba(255,255,255,0.72)" }}>{mode.toUpperCase()}</strong></p>
@@ -229,6 +242,9 @@ export default function Settings() {
               <SliderRow label="Selection dwell" hint="How long to hold the selected direction" value={eyesSelectionDwell} display={`${Math.round(eyesSelectionDwell)} ms`} min={500} max={3000} step={100} accent="#22c55e" onChange={v => updateEyesConfig({ selectionDwell: v })} />
               <Divider />
               <SliderRow label="Command delay" hint="Time between commands" value={eyesCommandDelay} display={`${Math.round(eyesCommandDelay)} ms`} min={100} max={1200} step={50} accent="#22c55e" onChange={v => updateEyesConfig({ commandDelay: v })} />
+              <Divider />
+              <SliderRow label="Scan timing" hint="Slower = more time per selection" value={keyboardScanMs} display={`${Math.round(keyboardScanMs)}ms`} min={300} max={1500} step={50} accent="#22c55e" onChange={setKeyboardScanMs} />
+              <p style={s.metaText}>Auto-saves</p>
             </section>
 
             <SectionHeader title="Tuning" subtitle="Eye tracking behavior" onReset={() => resetToDefault?.("eyes")} />
@@ -355,6 +371,9 @@ export default function Settings() {
               <SliderRow label="Selection dwell" hint="How long to hold the selected direction" value={cnnSelectionDwell} display={`${Math.round(cnnSelectionDwell)} ms`} min={500} max={3000} step={100} accent="#22c55e" onChange={v => updateCnnConfig({ selectionDwell: v })} />
               <Divider />
               <SliderRow label="Command delay" hint="Time between commands" value={cnnCommandDelay} display={`${Math.round(cnnCommandDelay)} ms`} min={100} max={1200} step={50} accent="#22c55e" onChange={v => updateCnnConfig({ commandDelay: v })} />
+              <Divider />
+              <SliderRow label="Scan timing" hint="Slower = more time per selection" value={keyboardScanMs} display={`${Math.round(keyboardScanMs)}ms`} min={300} max={1500} step={50} accent="#22c55e" onChange={setKeyboardScanMs} />
+              <p style={s.metaText}>Auto-saves</p>
             </section>
 
             <SectionHeader title="Tuning" subtitle="Prediction confidence and stability" onReset={() => resetToDefault?.("cnn")} />
