@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiPost } from "../api";
 import { useInputControl } from "./InputControlContextV2";
+import { GazeIndicator } from "../components/EyeTrackingDebug";
 
 const BODY_PARTS = [
   { id: "head", label: "Head", speech: "My head hurts", shape: { top: "2%", left: "40%", width: "20%", height: "18%", borderRadius: "999px" } },
@@ -41,7 +42,7 @@ const ITEM_INDEX = Object.fromEntries(ITEMS.map((item, idx) => [item.id, idx]));
 
 export default function Pain() {
   const navigate = useNavigate();
-  const { mode, enabled, register, unregister } = useInputControl();
+  const { mode, enabled, register, unregister, eyeDebug, cnnDebug, headDebug } = useInputControl();
 
   const [selIdx, setSelIdx] = useState(0);
   const [status, setStatus] = useState(null);
@@ -233,6 +234,10 @@ export default function Pain() {
               : "Input control enabled"}
         </p>
       )} */}
+      
+      {mode === "eyes" && eyeDebug && <GazeIndicator debug={eyeDebug} />}
+      {mode === "cnn" && cnnDebug && <GazeIndicator debug={cnnDebug} />}
+      {mode === "head" && headDebug && <GazeIndicator debug={headDebug} />}
     </div>
   );
 }

@@ -12,7 +12,7 @@ export default function EyeTrackingDebug() {
   const { mode, eyeDebug, cnnDebug, headDebug } = useInputControl();
   const location = useLocation();
   const isSettingsPage = location.pathname === "/settings";
-  const showModeIndicator = ["/", "/communicate", "/compose"].includes(location.pathname);
+  const showModeIndicator = ["/communicate", "/compose"].includes(location.pathname);
 
   if (mode === "eyes" && eyeDebug) {
     if (!isSettingsPage) {
@@ -89,28 +89,28 @@ export function GazeIndicator({ debug, compact = false, embedded = false }) {
     <div
       style={{
         position: embedded ? "relative" : "fixed",
-        top: embedded ? "auto" : 86,
-        left: embedded ? "auto" : "50%",
-        transform: embedded ? "none" : "translateX(-50%)",
+        top: embedded ? "auto" : 20,
+        right: embedded ? "auto" : 20,
+        left: embedded ? "auto" : "auto",
+        transform: embedded ? "none" : "none",
         zIndex: 10000,
-        width: compact ? "min(280px, 62vw)" : "min(420px, 86vw)",
+        width: embedded ? "auto" : "280px",
         backgroundColor: "rgba(17, 24, 39, 0.94)",
         border: `1.5px solid ${isSelecting ? "rgba(167,139,250,0.55)" : "rgba(255, 255, 255, 0.15)"}`,
-        borderRadius: "14px",
-        padding: compact ? "9px 11px" : "12px 14px",
-        boxShadow: isSelecting ? "0 6px 22px rgba(167,139,250,0.25)" : "0 6px 20px rgba(0, 0, 0, 0.7)",
+        borderRadius: "12px",
+        padding: "6px 8px",
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: compact ? 6 : 8 }}>
-        <span style={{ fontFamily: "monospace", fontSize: compact ? 15 : 18, fontWeight: 700, color: dirColor, letterSpacing: "0.06em" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+        <span style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 700, color: dirColor, letterSpacing: "0.06em" }}>
           {dir}
         </span>
-        <span style={{ fontFamily: "monospace", fontSize: compact ? 11 : 12, color: "rgba(255,255,255,0.65)" }}>
+        <span style={{ fontFamily: "monospace", fontSize: 9, color: "rgba(255,255,255,0.65)" }}>
           conf {conf.toFixed(2)}
         </span>
       </div>
 
-      <div style={{ height: compact ? 7 : 8, borderRadius: 999, background: "rgba(255,255,255,0.08)", overflow: "hidden" }}>
+      <div style={{ height: 5, borderRadius: 999, background: "rgba(255,255,255,0.08)", overflow: "hidden" }}>
         <div
           style={{
             width: `${Math.round(progress * 100)}%`,
@@ -121,7 +121,7 @@ export function GazeIndicator({ debug, compact = false, embedded = false }) {
         />
       </div>
 
-      <div style={{ marginTop: compact ? 5 : 7, display: "flex", justifyContent: "space-between", fontSize: compact ? 10 : 11, color: "rgba(255,255,255,0.55)" }}>
+      <div style={{ marginTop: 3, display: "flex", justifyContent: "space-between", fontSize: 8, color: "rgba(255,255,255,0.55)" }}>
         <span>Select: {selectionMethod}</span>
         <span>{statusText}</span>
       </div>

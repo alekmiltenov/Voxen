@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useInputControl } from "./InputControlContextV2";
 import { focusRing, focusedStyle, unfocusedBorderColor } from "../utils/focusStyle";
+import { GazeIndicator } from "../components/EyeTrackingDebug";
 
 const CARDS = [
   {
@@ -37,7 +38,7 @@ const MODES = [
 
 export default function Home() {
   const navigate = useNavigate();
-  const { mode, setControlMode, enabled, register, unregister } = useInputControl();
+  const { mode, setControlMode, enabled, register, unregister, eyeDebug, cnnDebug, headDebug } = useInputControl();
 
   const [selIdx, setSelIdx] = useState(0); // Start with first card highlighted
   const selRef = useRef(0);
@@ -134,6 +135,15 @@ export default function Home() {
           ))}
         </div>
       </div>
+
+      {/* ── Debug Indicator ── */}
+      {(mode === "eyes" && eyeDebug) || (mode === "cnn" && cnnDebug) || (mode === "head" && headDebug) ? (
+        <div style={{ position: "relative", width: "280px", height: "auto" }}>
+          {mode === "eyes" && eyeDebug && <GazeIndicator debug={eyeDebug} embedded />}
+          {mode === "cnn" && cnnDebug && <GazeIndicator debug={cnnDebug} embedded />}
+          {mode === "head" && headDebug && <GazeIndicator debug={headDebug} embedded />}
+        </div>
+      ) : null}
 
       {/* ── Cards ── */}
       <div style={s.grid}>

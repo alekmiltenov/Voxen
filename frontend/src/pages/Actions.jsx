@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiPost } from "../api";
 import { useInputControl } from "./InputControlContextV2";
+import { GazeIndicator } from "../components/EyeTrackingDebug";
 
 const ACTIONS = [
   { id: 2, label: "Emergency", sub: "Immediate alert" },
@@ -113,7 +114,7 @@ function ActionIcon({ id }) {
 
 export default function Actions() {
   const navigate = useNavigate();
-  const { mode, enabled, register, unregister } = useInputControl();
+  const { mode, enabled, register, unregister, eyeDebug, cnnDebug, headDebug } = useInputControl();
 
   const [status,  setStatus]  = useState(null);
   const [selIdx,  setSelIdx]  = useState(0);
@@ -252,6 +253,10 @@ export default function Actions() {
         </p>
       )}
       */}
+      
+      {mode === "eyes" && eyeDebug && <GazeIndicator debug={eyeDebug} />}
+      {mode === "cnn" && cnnDebug && <GazeIndicator debug={cnnDebug} />}
+      {mode === "head" && headDebug && <GazeIndicator debug={headDebug} />}
     </div>
   );
 }
