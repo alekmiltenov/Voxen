@@ -409,11 +409,11 @@ export default function Settings() {
         )}
       </div>
 
-      {enabled && (
+      {/* {enabled && (
         <p style={s.legend}>
           {mode === "head" ? "BACK · return home" : "BACK · return home"}
         </p>
-      )}
+      )} */}
     </div>
   );
 }
