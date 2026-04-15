@@ -123,21 +123,6 @@ export default function Pain() {
     <div style={s.page}>
       <div style={s.header}>
         <span style={s.title}>Pain & comfort</span>
-        {status && (
-          <div
-            style={{
-              ...s.toast,
-              position: "absolute",
-              top: "50%",
-              right: 0,
-              transform: "translateY(-50%)",
-              borderColor: status.ok ? "rgba(255,255,255,0.18)" : "rgba(255,90,90,0.45)",
-              color: status.ok ? "rgba(255,255,255,0.75)" : "rgba(255,120,120,0.9)",
-            }}
-          >
-            {status.msg}
-          </div>
-        )}
       </div>
 
       <div style={s.content}>
@@ -239,7 +224,7 @@ export default function Pain() {
         </div>
       </div>
 
-      {enabled && (
+      {/* {enabled && (
         <p style={s.legend}>
           {mode === "head"
             ? "LEFT / RIGHT navigate · FORWARD select · BACK home"
@@ -247,7 +232,7 @@ export default function Pain() {
               ? "UP / DOWN / LEFT / RIGHT navigate · FORWARD or dwell to select"
               : "Input control enabled"}
         </p>
-      )}
+      )} */}
     </div>
   );
 }
