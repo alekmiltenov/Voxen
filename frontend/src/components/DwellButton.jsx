@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { getDwellMs } from "../utils/settings";
 
 /**
@@ -19,11 +19,30 @@ export default function DwellButton({
   ...props
 }) {
   const [progress, setProgress] = useState(0);
+  const [smoothProgress, setSmoothProgress] = useState(0);
   const [hovered,  setHovered]  = useState(false);
   const frameRef   = useRef(null);
   const startRef   = useRef(null);
   const activeRef  = useRef(false);
   const durationRef = useRef(0);
+
+  // LERP interpolation effect for smooth progress
+  useEffect(() => {
+    let raf;
+
+    const lerp = (a, b, t) => a + (b - a) * t;
+
+    const update = () => {
+      setSmoothProgress((prev) => {
+        const next = lerp(prev, progress, 0.2); // Smoothing factor (0.15-0.3 for adjustment)
+        return Math.abs(next - progress) < 0.001 ? progress : next;
+      });
+      raf = requestAnimationFrame(update);
+    };
+
+    raf = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(raf);
+  }, [progress]);
 
   function onEnter() {
     if (disabled) return;
@@ -82,16 +101,16 @@ export default function DwellButton({
       )}
 
       {/* progress bar sweeps along the bottom edge */}
-      {progress > 0 && (
+      {smoothProgress > 0 && (
         <div style={{
           position:      "absolute",
           bottom:        0,
           left:          0,
           height:        "3px",
-          width:         `${progress * 100}%`,
+          width:         `${smoothProgress * 100}%`,
           background:    "rgba(255,255,255,0.9)",
           pointerEvents: "none",
-          transition:    "none",
+          transition:    "width 0.1s linear",
         }} />
       )}
     </button>
