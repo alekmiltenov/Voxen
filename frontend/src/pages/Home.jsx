@@ -138,7 +138,7 @@ export default function Home() {
 
       {/* ── Debug Indicator ── */}
       {(mode === "eyes" && eyeDebug) || (mode === "cnn" && cnnDebug) || (mode === "head" && headDebug) ? (
-        <div style={{ position: "relative", width: "280px", height: "auto" }}>
+        <div style={{ position: "absolute", top: "80px", width: "280px", height: "auto" }}>
           {mode === "eyes" && eyeDebug && <GazeIndicator debug={eyeDebug} embedded />}
           {mode === "cnn" && cnnDebug && <GazeIndicator debug={cnnDebug} embedded />}
           {mode === "head" && headDebug && <GazeIndicator debug={headDebug} embedded />}
