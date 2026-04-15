@@ -187,13 +187,14 @@ _latest_frame   = None
 _ws_loop        = None
 _ws_clients: set = set()   # asyncio.Queue per connected /ws/predict client
 
-_STABLE_WINDOW_SIZE = 5
-_STABLE_MIN_CONF = 0.6
+_STABLE_WINDOW_SIZE = 3
+_STABLE_MIN_CONF = 0.5
 _stable_hist = deque(maxlen=_STABLE_WINDOW_SIZE)
 _low_conf_streak = 0
-_STABLE_LOW_CONF_RESET = 5
-_STABLE_STALE_MS = 1200
+_STABLE_LOW_CONF_RESET = 3
+_STABLE_STALE_MS = 300
 _last_stable_update_ms = 0
+_last_cnn_infer_log_ms = 0
 
 _STABLE_WINDOW_MIN = 3
 _STABLE_WINDOW_MAX = 15
@@ -321,7 +322,7 @@ def _update_stable_prediction(raw_pred: dict) -> Optional[dict]:
     stable_pred = {
         "label": majority_label,
         "name": stable_name,
-        "confidence": round(avg_conf, 4),
+        "confidence": round(avg_conf, 3),
         "ready": True,
     }
 
@@ -410,10 +411,13 @@ def _cnn_inference_loop():
 
 def _cnn_esp32_inference_loop():
     """CNN inference worker fed by /ws/esp32/camera (latest-frame buffer)."""
-    global _latest_frame
+    global _latest_frame, _last_cnn_infer_log_ms
     try:
         import torch
         from eye_tracking import EyeTrackCNN, LABELS, preprocess_eye_frame
+
+        # Demo mode: avoid CPU thread oversubscription for more predictable latency.
+        torch.set_num_threads(1)
 
         model_path = os.path.join(_ROOT, "eye_tracking", "model.pt")
         if not os.path.exists(model_path):
@@ -441,18 +445,23 @@ def _cnn_esp32_inference_loop():
 
             bgr = _apply_camera_rotation(bgr)
 
-            _, jpg = cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, 60])
-            _latest_frame = jpg.tobytes()
+            # Reuse original ESP32 JPEG bytes (no recompress latency).
+            _latest_frame = jpeg_bytes
 
             gray64 = preprocess_eye_frame(bgr)
 
             t0 = time.perf_counter()
-            t = (torch.tensor(gray64 / 255.0, dtype=torch.float32)
+            t = (torch.from_numpy(gray64 / 255.0).float()
                       .unsqueeze(0).unsqueeze(0).to(device))
             with torch.no_grad():
                 probs = model(t)[0]
             infer_done_ms = int(time.time() * 1000)
             infer_ms = (time.perf_counter() - t0) * 1000.0
+
+            # Keep loop logging lightweight while exposing latency in demo mode.
+            if infer_done_ms - _last_cnn_infer_log_ms >= 500:
+                print(f"[CNN] infer {round(infer_ms,1)}ms")
+                _last_cnn_infer_log_ms = infer_done_ms
 
             idx = probs.argmax().item()
             capture_ms = None
