@@ -1,11 +1,13 @@
 from datetime import datetime
+import os
 from Action_Space.sms import send_sms
 
 
 def emergency_alert(payload=None):
     payload = payload or {}
 
-    phone = payload.get("phone", "+359877117665") # test number, needs to be connected with frontend
+    default_phone = os.getenv("EMERGENCY_PHONE", "+359897827404")
+    phone = payload.get("phone", default_phone)
 
     message = payload.get(
         "message",
@@ -23,7 +25,7 @@ Time: {datetime.now().strftime("%H:%M:%S")}
             "status": "executed",
             "action": "emergency",
             "success": True,
-            "message": "Emergency SMS sent",
+            "message": result.get("message", "Emergency SMS sent"),
             "data": result,
         }
 
