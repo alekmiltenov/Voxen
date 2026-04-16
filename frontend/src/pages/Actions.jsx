@@ -122,8 +122,8 @@ export default function Actions() {
   const setSel = (v) => { selRef.current = v; setSelIdx(v); };
 
   const runAction = async (id) => {
-    if (id === 1) return;  // Call caregiver disabled
     setStatus(null);
+    if (id === 1) { navigate("/food-and-water"); return; }
     if (id === 3) { navigate("/ai-chat"); return; }
     if (id === 4) { navigate("/pain"); return; }
     try {
@@ -142,7 +142,7 @@ export default function Actions() {
       if (mode === "head") {
         if (cmd === "LEFT")    setSel(Math.max(0, selRef.current - 1));
         if (cmd === "RIGHT")   setSel(Math.min(ACTIONS.length - 1, selRef.current + 1));
-        if (cmd === "FORWARD" && ACTIONS[selRef.current].id !== 1) runAction(ACTIONS[selRef.current].id);
+        if (cmd === "FORWARD") runAction(ACTIONS[selRef.current].id);
         if (cmd === "BACK")    navigate("/");
       } else {
         // eyes: 2D grid nav with dwell-to-confirm
@@ -161,13 +161,13 @@ export default function Actions() {
         if (d.idx === newIdx && !d.fired) {
           if (Date.now() - d.start >= 2000) {
             d.fired = true;
-            if (ACTIONS[newIdx].id !== 1) runAction(ACTIONS[newIdx].id);
+            runAction(ACTIONS[newIdx].id);
           }
         } else if (d.idx !== newIdx) {
           dwellRef.current = { idx: newIdx, start: Date.now(), fired: false };
         }
 
-        if (cmd === "FORWARD" && ACTIONS[selRef.current].id !== 1) runAction(ACTIONS[selRef.current].id);
+        if (cmd === "FORWARD") runAction(ACTIONS[selRef.current].id);
       }
     });
     return () => unregister();
@@ -236,7 +236,7 @@ export default function Actions() {
                   e.currentTarget.style.background = "#0f0f0f";
                 }
               }}
-              onClick={() => a.id !== 1 && runAction(a.id)}
+              onClick={() => runAction(a.id)}
             >
               <div style={s.iconBox}><ActionIcon id={a.id} /></div>
               <span style={{ ...s.label, color: theme.title }}>{a.label}</span>

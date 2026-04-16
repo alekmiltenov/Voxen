@@ -6,6 +6,7 @@ import Actions     from "./pages/Actions";
 import Keyboard    from "./pages/Keyboard";
 import AIChat      from "./pages/AIChat";
 import Pain        from "./pages/Pain";
+import FoodAndWater   from "./pages/FoodAndWater";
 import CaretakerDashboard from "./pages/caretaker/CaretakerDashboard";
 import { InputControlProvider, useInputControl } from "./pages/InputControlContextV2";
 import Settings from "./pages/Settings";
@@ -24,6 +25,7 @@ function AppContent() {
         <Route path="/compose"     element={<Compose />} />
         <Route path="/actions"     element={<Actions />} />
         <Route path="/pain"        element={<Pain />} />
+        <Route path="/food-and-water"  element={<FoodAndWater />} />
         <Route path="/keyboard"    element={<Keyboard />} />
         <Route path="/ai-chat"     element={<AIChat />} />
         <Route path="/caretaker"   element={<CaretakerDashboard />} />
