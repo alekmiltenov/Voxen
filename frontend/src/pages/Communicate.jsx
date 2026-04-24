@@ -62,8 +62,6 @@ export default function Communicate() {
     loadStarters();
   }, [loadStarters]);
 
-  const wrap = (i, n) => (n === 0 ? 0 : ((i % n) + n) % n);
-
   function selectStarter(phrase) {
     const start = encodeURIComponent(String(phrase || "").trim());
     navigate(`/compose?start=${start}`);
@@ -76,9 +74,27 @@ export default function Communicate() {
       const totalItems = gridItems + 2;
       let newSel = selRef.current;
 
+      const moveLeft = () => {
+        const current = selRef.current;
+        if (current < gridItems) {
+          if (current % gridSize !== 0) newSel = current - 1;
+          return;
+        }
+        if (current === gridItems + 1) newSel = gridItems;
+      };
+
+      const moveRight = () => {
+        const current = selRef.current;
+        if (current < gridItems) {
+          if (current % gridSize !== gridSize - 1) newSel = current + 1;
+          return;
+        }
+        if (current === gridItems) newSel = gridItems + 1;
+      };
+
       if (mode === "head") {
-        if (cmd === "LEFT") newSel = wrap(selRef.current - 1, totalItems);
-        if (cmd === "RIGHT") newSel = wrap(selRef.current + 1, totalItems);
+        if (cmd === "LEFT") moveLeft();
+        if (cmd === "RIGHT") moveRight();
         if (cmd === "UP") newSel = Math.max(0, selRef.current - gridSize);
         if (cmd === "DOWN") newSel = Math.min(totalItems - 1, selRef.current + gridSize);
         if (cmd === "FORWARD") {
@@ -90,8 +106,8 @@ export default function Communicate() {
       } else if (mode === "cnn") {
         if (cmd === "UP") newSel = Math.max(0, selRef.current - gridSize);
         if (cmd === "DOWN") newSel = Math.min(totalItems - 1, selRef.current + gridSize);
-        if (cmd === "LEFT") newSel = wrap(selRef.current - 1, totalItems);
-        if (cmd === "RIGHT") newSel = wrap(selRef.current + 1, totalItems);
+        if (cmd === "LEFT") moveLeft();
+        if (cmd === "RIGHT") moveRight();
         if (cmd === "FORWARD") {
           if (selRef.current < gridItems) selectStarter(startersRef.current[selRef.current]);
           else if (selRef.current === gridItems) navigate("/keyboard", { state: { words: [], returnTo: "/compose" } });
@@ -100,8 +116,8 @@ export default function Communicate() {
       } else {
         if (cmd === "UP") newSel = Math.max(0, selRef.current - gridSize);
         if (cmd === "DOWN") newSel = Math.min(totalItems - 1, selRef.current + gridSize);
-        if (cmd === "LEFT") newSel = wrap(selRef.current - 1, totalItems);
-        if (cmd === "RIGHT") newSel = wrap(selRef.current + 1, totalItems);
+        if (cmd === "LEFT") moveLeft();
+        if (cmd === "RIGHT") moveRight();
         if (cmd === "FORWARD") {
           if (selRef.current < gridItems) selectStarter(startersRef.current[selRef.current]);
           else if (selRef.current === gridItems) navigate("/keyboard", { state: { words: [], returnTo: "/compose" } });

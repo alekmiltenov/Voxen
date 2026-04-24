@@ -11,11 +11,13 @@ const ACTIONS = [
   { id: 3, label: "AI chat", sub: "Ask anything, talk freely" },
 ];
 
+const BACK_INDEX = ACTIONS.length;
+
 const CARD_THEME = {
   2: {
     border: "#3a1010",
     hoverBorder: "#6b2020",
-    hoverBg: "#130a0a",
+    hoverBg: "#241111",
     title: "#e05555",
   },
   1: {
@@ -139,20 +141,40 @@ export default function Actions() {
 
   useEffect(() => {
     register((cmd) => {
+      const runSelected = (idx) => {
+        if (idx === BACK_INDEX) {
+          navigate("/");
+          return;
+        }
+
+        const action = ACTIONS[idx];
+        if (action) runAction(action.id);
+      };
+
       if (mode === "head") {
         if (cmd === "LEFT")    setSel(Math.max(0, selRef.current - 1));
         if (cmd === "RIGHT")   setSel(Math.min(ACTIONS.length - 1, selRef.current + 1));
-        if (cmd === "FORWARD") runAction(ACTIONS[selRef.current].id);
+        if (cmd === "FORWARD") runSelected(selRef.current);
         if (cmd === "BACK")    navigate("/");
       } else {
         // eyes: 2D grid nav with dwell-to-confirm
         const cur = selRef.current;
         let newIdx = cur;
 
-        if (cmd === "UP")    newIdx = cur >= 2 ? cur - 2 : cur;
-        if (cmd === "DOWN")  newIdx = cur < 2 ? cur + 2 : cur;
-        if (cmd === "LEFT")  newIdx = cur % 2 === 1 ? cur - 1 : cur;
-        if (cmd === "RIGHT") newIdx = cur % 2 === 0 && cur + 1 < ACTIONS.length ? cur + 1 : cur;
+        if (cmd === "UP") {
+          if (cur === 0 || cur === 1) newIdx = BACK_INDEX;
+          else if (cur >= 2 && cur < ACTIONS.length) newIdx = cur - 2;
+        }
+        if (cmd === "DOWN") {
+          if (cur === BACK_INDEX) newIdx = 0;
+          else if (cur < 2) newIdx = cur + 2;
+        }
+        if (cmd === "LEFT") {
+          if (cur === 1 || cur === 3) newIdx = cur - 1;
+        }
+        if (cmd === "RIGHT") {
+          if (cur === 0 || cur === 2) newIdx = cur + 1;
+        }
 
         setSel(newIdx);
 
@@ -161,19 +183,20 @@ export default function Actions() {
         if (d.idx === newIdx && !d.fired) {
           if (Date.now() - d.start >= 2000) {
             d.fired = true;
-            runAction(ACTIONS[newIdx].id);
+            runSelected(newIdx);
           }
         } else if (d.idx !== newIdx) {
           dwellRef.current = { idx: newIdx, start: Date.now(), fired: false };
         }
 
-        if (cmd === "FORWARD") runAction(ACTIONS[selRef.current].id);
+        if (cmd === "FORWARD") runSelected(selRef.current);
       }
     });
     return () => unregister();
   }, [mode]);
 
   const isEyes = mode === "eyes";
+  const isBackSelected = enabled && selIdx === BACK_INDEX;
 
   return (
     <div style={s.page}>
@@ -181,19 +204,23 @@ export default function Actions() {
         <button
           style={{
             ...s.backBtn,
-            borderColor: "#1e1e1e",
-            background: "#0f0f0f",
+            borderColor: isBackSelected ? "#505050" : "#1e1e1e",
+            background: isBackSelected ? "#222222" : "#0f0f0f",
             color: "rgb(224 224 224)",
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = "#505050";
-            e.currentTarget.style.background = "#222222";
-            e.currentTarget.style.color = "rgb(224 224 224)";
+            if (!isBackSelected) {
+              e.currentTarget.style.borderColor = "#505050";
+              e.currentTarget.style.background = "#222222";
+              e.currentTarget.style.color = "rgb(224 224 224)";
+            }
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = "#1e1e1e";
-            e.currentTarget.style.background = "#0f0f0f";
-            e.currentTarget.style.color = "rgb(224 224 224)";
+            if (!isBackSelected) {
+              e.currentTarget.style.borderColor = "#1e1e1e";
+              e.currentTarget.style.background = "#0f0f0f";
+              e.currentTarget.style.color = "rgb(224 224 224)";
+            }
           }}
           onClick={() => navigate("/")}
         >

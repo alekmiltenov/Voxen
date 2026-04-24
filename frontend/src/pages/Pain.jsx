@@ -20,6 +20,7 @@ const QUICK_OPTIONS = [
   { id: "medication", label: "Medication", speech: "I need medication", tone: "neutral" },
   { id: "reposition", label: "Reposition", speech: "Please help me reposition", tone: "neutral" },
   { id: "emergency", label: "Emergency", speech: "Emergency. Please help me now", tone: "danger" },
+  { id: "quick-back", label: "← Back", speech: "Go back", tone: "neutral" },
 ];
 
 const ITEMS = [
@@ -65,6 +66,11 @@ export default function Pain() {
   const fireSelection = useCallback(async (item) => {
     if (!item) return;
 
+    if (item.id === "quick-back") {
+      navigate(-1);
+      return;
+    }
+
     setStatus(null);
     speak(item.speech);
 
@@ -80,7 +86,7 @@ export default function Pain() {
     }
 
     setTimeout(() => setStatus(null), 2500);
-  }, [speak]);
+  }, [navigate, speak]);
 
   useEffect(() => {
     register((cmd) => {
@@ -205,23 +211,6 @@ export default function Pain() {
               </button>
             );
           })}
-          <button
-            style={{
-              ...s.quickBtn,
-              borderColor: "rgba(255,255,255,0.12)",
-              background: "rgba(255,255,255,0.04)",
-              color: "rgba(255,255,255,0.8)",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = "rgba(255,255,255,0.1)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "rgba(255,255,255,0.04)";
-            }}
-            onClick={() => navigate(-1)}
-          >
-            ← Back
-          </button>
         </div>
       </div>
 

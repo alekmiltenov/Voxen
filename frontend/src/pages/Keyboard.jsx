@@ -10,11 +10,7 @@ const ROWS = [
   ["Z","X","C","V","B","N","M"],
 ];
 
-const getBottomRow = (mode) => (
-  (mode === "eyes" || mode === "cnn")
-    ? ["DELETE", "SPACE", "DONE", "TOGGLE_REPEAT"]
-    : ["DELETE", "SPACE", "DONE"]
-);
+const getBottomRow = () => ["DELETE", "SPACE", "DONE", "BACK"];
 
 const SCAN_MIN_MS = 300;
 const SCAN_MAX_MS = 1500;
@@ -72,6 +68,7 @@ export default function Keyboard() {
   const [scanPulse, setScanPulse] = useState(false);
   const modeRef = useRef(mode);
   const eyeHoldRepeatEnabledRef = useRef(eyeHoldRepeatEnabled);
+  const hoveredKeyRef = useRef(null);
   const selRowRef = useRef(0);
   const selColRef = useRef(0);
   const scanEnabledRef = useRef(scanEnabled);
@@ -109,6 +106,10 @@ export default function Keyboard() {
   useEffect(() => {
     eyeHoldRepeatEnabledRef.current = eyeHoldRepeatEnabled;
   }, [eyeHoldRepeatEnabled]);
+
+  useEffect(() => {
+    hoveredKeyRef.current = hoveredKey;
+  }, [hoveredKey]);
 
   useEffect(() => {
     scanEnabledRef.current = scanEnabled;
@@ -178,9 +179,10 @@ export default function Keyboard() {
       if (scanPulseTimerRef.current) {
         window.clearTimeout(scanPulseTimerRef.current);
       }
+      setEyeHoldRepeatEnabled(false);
       restoreScanEyesOverrides();
     };
-  }, []);
+  }, [setEyeHoldRepeatEnabled]);
 
   const triggerScanPulse = () => {
     if (scanPulseTimerRef.current) {
@@ -190,22 +192,21 @@ export default function Keyboard() {
     scanPulseTimerRef.current = window.setTimeout(() => setScanPulse(false), 140);
   };
 
-  async function persistAndReturn() {
+  function persistAndReturn() {
     const allWords = currentTextWords();
     const prev = incomingWords.map(w => String(w).trim().toLowerCase()).filter(Boolean).join(" ");
     const next = allWords.map(w => String(w).trim().toLowerCase()).filter(Boolean).join(" ");
     const changed = prev !== next;
 
-    if (changed && allWords.length > 0) {
-      try {
-        await apiPost("/vocab/sentence", { words: allWords });
-      } catch (e) {
-        console.error(e);
-      }
-    }
-
     const starterWords = incomingWords.slice(0, starterLength);
+    setEyeHoldRepeatEnabled(false);
     navigate(returnTo, { state: { words: starterWords, ...extraState } });
+
+    if (changed && allWords.length > 0) {
+      apiPost("/vocab/sentence", { words: allWords }).catch((e) => {
+        console.error(e);
+      });
+    }
   }
 
   async function goToCompose() {
@@ -223,6 +224,7 @@ export default function Keyboard() {
     }
 
     const starterPhrase = allWords.length > 0 ? allWords[0] : "";
+    setEyeHoldRepeatEnabled(false);
     navigate(`/compose?start=${encodeURIComponent(starterPhrase)}`, { state: { words: allWords, ...extraState } });
   }
 
@@ -269,6 +271,10 @@ export default function Keyboard() {
     if (key === "SPACE") { setText(t => t + " "); return; }
     if (key === "TOGGLE_REPEAT") {
       setEyeHoldRepeatEnabled(!eyeHoldRepeatEnabledRef.current);
+      return;
+    }
+    if (key === "BACK") {
+      persistAndReturn();
       return;
     }
     if (key === "DONE") { void goToCompose(); return; }
@@ -338,6 +344,17 @@ export default function Keyboard() {
           setScanCol(0);
           return;
         }
+        void persistAndReturn();
+        return;
+      }
+
+      // In eye/cnn modes, dwell-triggered FORWARD can arrive before selRow/selCol updates.
+      // If the pointer is already over Back, treat FORWARD as Back deterministically.
+      if (
+        cmd === "FORWARD"
+        && (modeRef.current === "eyes" || modeRef.current === "cnn")
+        && hoveredKeyRef.current === "back"
+      ) {
         void persistAndReturn();
         return;
       }
@@ -652,7 +669,7 @@ export default function Keyboard() {
               ...s.key,
               flex: 1,
               ...((enabled && !scanEnabled && selRow === actionRowIndex && selCol === 2)
-                || (enabled && scanEnabled && scanPhase === "item" && scanRow === actionRowIndex && selCol === 2)
+                || (enabled && scanEnabled && scanPhase === "item" && scanRow === actionRowIndex && scanCol === 2)
                 || (!enabled && hoveredKey === "done")
                 ? s.selectedKey
                 : s.unselectedKey),
@@ -671,14 +688,17 @@ export default function Keyboard() {
             ...s.backKeyStyle,
             flex: 1,
             ...((enabled && !scanEnabled && selRow === actionRowIndex && selCol === 3)
-              || (enabled && scanEnabled && scanPhase === "item" && scanRow === actionRowIndex && selCol === 3)
+              || (enabled && scanEnabled && scanPhase === "item" && scanRow === actionRowIndex && scanCol === 3)
               || (!enabled && hoveredKey === "back")
               ? s.selectedKey
               : (hoveredKey === "back"
                 ? s.selectedKey
                 : s.unselectedKey)),
           }}
-            onMouseEnter={() => setHoveredKey("back")}
+            onMouseEnter={() => {
+              setHoveredKey("back");
+              setSelection(actionRowIndex, 3);
+            }}
             onMouseLeave={() => setHoveredKey(null)}
             onClick={() => { setSelection(actionRowIndex, 3); persistAndReturn(); }}>
             ← Back

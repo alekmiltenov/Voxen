@@ -322,16 +322,18 @@ export default function Compose() {
       if (cmd === "LEFT") {
         const rowItems = navRows[currentPos.row];
         if (!rowItems?.length) return;
-        const nextCol = (currentPos.col - 1 + rowItems.length) % rowItems.length;
-        moveTo(currentPos.row, nextCol);
+        if (currentPos.col > 0) {
+          moveTo(currentPos.row, currentPos.col - 1);
+        }
         return;
       }
 
       if (cmd === "RIGHT") {
         const rowItems = navRows[currentPos.row];
         if (!rowItems?.length) return;
-        const nextCol = (currentPos.col + 1) % rowItems.length;
-        moveTo(currentPos.row, nextCol);
+        if (currentPos.col < rowItems.length - 1) {
+          moveTo(currentPos.row, currentPos.col + 1);
+        }
         return;
       }
 
